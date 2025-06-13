@@ -281,67 +281,57 @@ app.get("/api/telegram/deep-link", async (req, res) => {
 });
 
 // Webhook endpoint'i
-app.post("/telegram/webhook", express.json(), async (req, res) => {
+app.post('/api/telegram/webhook', async (req, res) => {
   try {
-    const update = req.body;
-    console.log("Telegram webhook güncellemesi:", update);
+    const { message } = req.body;
+    console.log('Webhook mesajı alındı:', message);
 
-    if (update.message) {
-      const chatId = update.message.chat.id;
-      const text = update.message.text;
-      const username = update.message.from.username || update.message.from.first_name;
-      const userId = update.message.from.id.toString();
+    if (message?.text === '/start') {
+      const chatId = message.chat.id;
+      const username = message.from.username || message.from.first_name;
 
-      // /start komutu için deep link token oluştur
-      if (text === "/start") {
-        // Kullanıcıyı veritabanında ara
-        let user = await User.findOne({ telegramId: userId });
-        
-        if (user) {
-          // Son /start komutundan bu yana 24 saat geçti mi kontrol et
-          const lastStart = user.lastStartCommand || new Date(0);
-          const hoursSinceLastStart = (Date.now() - lastStart.getTime()) / (1000 * 60 * 60);
-          
-          if (hoursSinceLastStart < 24) {
-            const remainingHours = Math.ceil(24 - hoursSinceLastStart);
-            await bot.sendMessage(chatId, 
-              `Üzgünüm, yeni bir giriş linki almak için ${remainingHours} saat beklemelisiniz.`
-            );
-            return res.sendStatus(200);
-          }
-        } else {
-          // Yeni kullanıcı oluştur
-          user = new User({
-            telegramId: userId,
-            username: username,
-            displayName: username,
-            isVerified: false
-          });
-        }
-
-        // Token oluştur ve kullanıcıyı güncelle
-        const { token, expiresAt } = generateDeepLinkToken();
-        deepLinkTokens.set(token, {
-          telegramId: userId,
-          expiresAt
+      // Kullanıcıyı bul veya oluştur
+      let user = await User.findOne({ telegramId: chatId });
+      
+      if (!user) {
+        user = new User({
+          telegramId: chatId,
+          username: username,
+          isVerified: true,
+          lastStartCommand: new Date()
         });
-
+        await user.save();
+        console.log('Yeni kullanıcı oluşturuldu:', username);
+      } else {
+        // Kullanıcı zaten varsa, son /start komutunu güncelle
         user.lastStartCommand = new Date();
         await user.save();
-
-        const deepLinkUrl = `${FRONTEND_URL}?token=${token}`;
-        await bot.sendMessage(chatId, 
-          `Merhaba ${username}! Sohbet uygulamasına hoş geldiniz.\n\n` +
-          `Giriş yapmak için aşağıdaki linke tıklayın:\n${deepLinkUrl}\n\n` +
-          `Bu link 24 saat süreyle geçerlidir.`
-        );
+        console.log('Mevcut kullanıcı güncellendi:', username);
       }
-    }
 
-    res.sendStatus(200);
+      // Token oluştur ve deep link URL'sini gönder
+      const token = generateDeepLinkToken().token;
+      const deepLinkUrl = `${FRONTEND_URL}?token=${token}`;
+      
+      // Token'ı veritabanına kaydet
+      await deepLinkTokens.set(token, {
+        telegramId: chatId,
+        expiresAt: Date.now() + 24 * 60 * 60 * 1000 // 24 saat
+      });
+
+      await bot.sendMessage(chatId, 
+        `Merhaba ${username}! Sohbet uygulamasına hoş geldiniz.\n\n` +
+        `Giriş yapmak için aşağıdaki linke tıklayın:\n${deepLinkUrl}\n\n` +
+        `Bu link 24 saat geçerlidir.`
+      );
+
+      res.status(200).json({ success: true });
+    } else {
+      res.status(200).json({ success: true, message: 'Komut işlenmedi' });
+    }
   } catch (error) {
-    console.error("Webhook işleme hatası:", error);
-    res.sendStatus(500);
+    console.error('Webhook hatası:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

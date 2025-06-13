@@ -50,7 +50,7 @@ const Message = mongoose.model("Message", messageSchema);
 
 // CORS ayarları
 app.use(cors({
-  origin: ["https://chat-app-1-bhl9.onrender.com", "http://localhost:3000"],
+  origin: ["https://chat-app-frontend-stnq.onrender.com", "http://localhost:3000"],
   methods: ["GET", "POST"],
   credentials: true
 }));
@@ -60,7 +60,7 @@ app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ["https://chat-app-1-bhl9.onrender.com", "http://localhost:3000"],
+    origin: ["https://chat-app-frontend-stnq.onrender.com", "http://localhost:3000"],
     methods: ["GET", "POST"],
     credentials: true
   }
@@ -70,7 +70,7 @@ const io = new Server(server, {
 const TELEGRAM_TOKEN = "8070821143:AAG20-yS1J4hxoNB50e5eH2A3GYME3p7CXM";
 const WEBHOOK_URL = "https://chat-app-bb7l.onrender.com/telegram/webhook";
 const BOT_USERNAME = "klfh_bot";
-const FRONTEND_URL = "https://chat-app-1-bhl9.onrender.com";
+const FRONTEND_URL = "https://chat-app-frontend-stnq.onrender.com";
 
 // Telegram bot oluştur
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
@@ -251,13 +251,20 @@ app.get("/api/telegram/deep-link", async (req, res) => {
       });
     }
 
-    // Token'ı kullanıldığı için sil
+    // Token'ı kullanıldıktan sonra sil
     deepLinkTokens.delete(token);
 
+    // Başarılı yanıt
     res.json({
       success: true,
       username: user.username,
-      userId: user._id
+      userId: user._id,
+      user: {
+        id: user._id,
+        username: user.username,
+        displayName: user.displayName || user.username,
+        isAdmin: user.isAdmin || false
+      }
     });
   } catch (error) {
     console.error("Deep link doğrulama hatası:", error);
@@ -268,135 +275,32 @@ app.get("/api/telegram/deep-link", async (req, res) => {
   }
 });
 
-// Telegram webhook endpoint
-app.post("/telegram/webhook", async (req, res) => {
+// Webhook endpoint'i
+app.post("/telegram/webhook", express.json(), async (req, res) => {
   try {
-    console.log("Telegram webhook'a istek geldi:", JSON.stringify(req.body, null, 2));
-    const { message } = req.body;
+    const update = req.body;
+    console.log("Telegram webhook güncellemesi:", update);
 
-    if (!message) {
-      console.log("Mesaj içeriği yok:", req.body);
-      return res.sendStatus(200);
-    }
+    if (update.message) {
+      const chatId = update.message.chat.id;
+      const text = update.message.text;
+      const username = update.message.from.username || update.message.from.first_name;
 
-    const { text, from, chat } = message;
-    console.log("Gelen mesaj detayları:", {
-      text,
-      from: {
-        id: from.id,
-        username: from.username,
-        first_name: from.first_name
-      },
-      chat: {
-        id: chat.id,
-        type: chat.type
-      }
-    });
-
-    if (text === "/start") {
-      console.log("Start komutu alındı, deep link oluşturuluyor...");
-      const userId = from.id.toString();
-      
-      try {
-        // Kullanıcıyı veritabanında ara veya oluştur
-        let user = await User.findOne({ telegramId: userId });
-        
-        if (!user) {
-          console.log("Yeni kullanıcı oluşturuluyor:", userId);
-          user = new User({
-            telegramId: userId,
-            username: from.username || `user_${userId}`,
-            firstName: from.first_name,
-            isVerified: false
-          });
-          await user.save();
-        }
-
-        // Deep link token oluştur
+      // /start komutu için deep link token oluştur
+      if (text === "/start") {
         const { token, expiresAt } = generateDeepLinkToken();
         deepLinkTokens.set(token, {
-          telegramId: userId,
+          telegramId: update.message.from.id.toString(),
           expiresAt
         });
 
-        // Deep link URL'i oluştur
-        const deepLinkUrl = `${FRONTEND_URL}/verify?token=${token}`;
-        
-        const response = await bot.sendMessage(
-          chat.id,
-          `Merhaba! Web uygulamasına giriş yapmak için aşağıdaki linke tıklayın:\n\n${deepLinkUrl}\n\nBu link 5 dakika geçerlidir.`
+        const deepLinkUrl = `${FRONTEND_URL}?token=${token}`;
+        await bot.sendMessage(chatId, 
+          `Merhaba ${username}! Sohbet uygulamasına hoş geldiniz.\n\n` +
+          `Giriş yapmak için aşağıdaki linke tıklayın:\n${deepLinkUrl}\n\n` +
+          `Bu link 5 dakika süreyle geçerlidir.`
         );
-        console.log("Deep link mesajı gönderildi:", response);
-      } catch (error) {
-        console.error("Deep link oluşturma hatası:", error);
-        await bot.sendMessage(chat.id, "Üzgünüm, bir hata oluştu. Lütfen daha sonra tekrar deneyin.");
       }
-    } else if (text === "/rooms") {
-      console.log("Rooms komutu alındı");
-      const rooms = Array.from(io.sockets.adapter.rooms.keys())
-        .filter(room => room.startsWith("room_"))
-        .map(room => room.replace("room_", ""));
-      
-      if (rooms.length === 0) {
-        await bot.sendMessage(chat.id, "Şu anda aktif oda bulunmuyor.");
-      } else {
-        const message = "Aktif odalar:\n" + rooms.map(room => `- ${room}`).join("\n");
-        await bot.sendMessage(chat.id, message);
-      }
-    } else if (text.startsWith("/join ")) {
-      console.log("Join komutu alındı");
-      const roomName = text.split(" ")[1];
-      if (!roomName) {
-        await bot.sendMessage(chat.id, "Lütfen bir oda adı belirtin. Örnek: /join genel");
-        return;
-      }
-
-      const roomId = `room_${roomName}`;
-      if (!io.sockets.adapter.rooms.has(roomId)) {
-        await bot.sendMessage(chat.id, "Bu oda mevcut değil. /rooms komutu ile mevcut odaları görebilirsiniz.");
-        return;
-      }
-
-      // Kullanıcıyı odaya ekle
-      const userId = from.id.toString();
-      const user = await User.findOne({ telegramId: userId });
-      
-      if (!user || !user.isVerified) {
-        await bot.sendMessage(chat.id, "Önce /start komutu ile doğrulama yapmalısınız.");
-        return;
-      }
-
-      // Kullanıcıyı odaya ekle ve bilgilendir
-      await bot.sendMessage(chat.id, `${roomName} odasına katıldınız. Artık bu odaya mesaj gönderebilirsiniz.`);
-    } else {
-      console.log("Normal mesaj alındı");
-      // Normal mesaj işleme
-      const userId = from.id.toString();
-      const user = await User.findOne({ telegramId: userId });
-      
-      if (!user || !user.isVerified) {
-        await bot.sendMessage(chat.id, "Önce /start komutu ile doğrulama yapmalısınız.");
-        return;
-      }
-
-      // Kullanıcının aktif olduğu odayı bul
-      const activeRoom = user.activeRoom;
-      if (!activeRoom) {
-        await bot.sendMessage(chat.id, "Bir odaya katılmak için /join <oda_adı> komutunu kullanın.");
-        return;
-      }
-
-      // Mesajı odaya gönder
-      const messageData = {
-        user: user.username,
-        text,
-        room: activeRoom,
-        time: new Date().toISOString(),
-        source: "telegram"
-      };
-
-      io.to(`room_${activeRoom}`).emit("message", messageData);
-      console.log("Telegram mesajı odaya iletildi:", messageData);
     }
 
     res.sendStatus(200);

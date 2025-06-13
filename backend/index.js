@@ -49,6 +49,16 @@ const messageSchema = new mongoose.Schema({
 
 const Message = mongoose.model("Message", messageSchema);
 
+// Şifre ve giriş denemesi için yeni modeller
+const LinkPassword = mongoose.model('LinkPassword', new mongoose.Schema({
+  token: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  attempts: { type: Number, default: 0 },
+  lastAttempt: { type: Date },
+  isLocked: { type: Boolean, default: false },
+  lockExpires: { type: Date }
+}));
+
 // CORS ayarları
 app.use(cors({
   origin: ["https://chat-app-frontend-stnq.onrender.com", "http://localhost:3000"],
@@ -280,7 +290,138 @@ app.get("/api/telegram/deep-link", async (req, res) => {
   }
 });
 
-// Webhook endpoint'i
+// Şifre kontrolü için endpoint
+app.post('/api/verify-link-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    
+    // Token'ı kontrol et
+    const linkData = await LinkPassword.findOne({ token });
+    if (!linkData) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Geçersiz link' 
+      });
+    }
+
+    // Hesap kilitli mi kontrol et
+    if (linkData.isLocked) {
+      const lockTime = new Date(linkData.lockExpires);
+      if (lockTime > new Date()) {
+        const remainingMinutes = Math.ceil((lockTime - new Date()) / (1000 * 60));
+        return res.status(403).json({
+          success: false,
+          message: `Spam nedeniyle hesabınız kilitlendi. ${remainingMinutes} dakika sonra tekrar deneyin.`
+        });
+      } else {
+        // Kilit süresi dolmuşsa sıfırla
+        linkData.isLocked = false;
+        linkData.attempts = 0;
+      }
+    }
+
+    // Şifre kontrolü
+    if (linkData.password === password) {
+      // Başarılı giriş - deneme sayısını sıfırla
+      linkData.attempts = 0;
+      await linkData.save();
+
+      // Token doğrulama işlemine devam et
+      const tokenData = await Token.findOne({ token });
+      if (!tokenData) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Geçersiz veya süresi dolmuş token' 
+        });
+      }
+
+      const user = await User.findById(tokenData.userId);
+      if (!user) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Kullanıcı bulunamadı' 
+        });
+      }
+
+      return res.json({
+        success: true,
+        username: user.username,
+        lastStartCommand: user.lastStartCommand
+      });
+    } else {
+      // Yanlış şifre - deneme sayısını artır
+      linkData.attempts += 1;
+      linkData.lastAttempt = new Date();
+
+      // 5 deneme sonrası kilitleme
+      if (linkData.attempts >= 5) {
+        linkData.isLocked = true;
+        linkData.lockExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 dakika
+      }
+
+      await linkData.save();
+
+      const remainingAttempts = 5 - linkData.attempts;
+      return res.status(401).json({
+        success: false,
+        message: remainingAttempts > 0 
+          ? `Yanlış şifre. Kalan deneme hakkı: ${remainingAttempts}`
+          : 'Spam nedeniyle hesabınız 15 dakika kilitlendi.'
+      });
+    }
+  } catch (error) {
+    console.error('Şifre doğrulama hatası:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Sunucu hatası' 
+    });
+  }
+});
+
+// Şifre belirleme endpoint'i
+app.post('/api/set-link-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    // Token'ı kontrol et
+    const tokenData = await Token.findOne({ token });
+    if (!tokenData) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Geçersiz veya süresi dolmuş token' 
+      });
+    }
+
+    // Şifre zaten belirlenmiş mi kontrol et
+    const existingPassword = await LinkPassword.findOne({ token });
+    if (existingPassword) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Bu link için şifre zaten belirlenmiş' 
+      });
+    }
+
+    // Yeni şifre kaydet
+    await LinkPassword.create({
+      token,
+      password,
+      attempts: 0
+    });
+
+    res.json({ 
+      success: true, 
+      message: 'Şifre başarıyla belirlendi' 
+    });
+  } catch (error) {
+    console.error('Şifre belirleme hatası:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Sunucu hatası' 
+    });
+  }
+});
+
+// Webhook endpoint'ini güncelle
 app.post('/api/telegram/webhook', async (req, res) => {
   try {
     const { message } = req.body;
@@ -303,26 +444,26 @@ app.post('/api/telegram/webhook', async (req, res) => {
         await user.save();
         console.log('Yeni kullanıcı oluşturuldu:', username);
       } else {
-        // Kullanıcı zaten varsa, son /start komutunu güncelle
         user.lastStartCommand = new Date();
         await user.save();
         console.log('Mevcut kullanıcı güncellendi:', username);
       }
 
       // Token oluştur ve deep link URL'sini gönder
-      const token = generateDeepLinkToken().token;
+      const token = generateToken();
       const deepLinkUrl = `${FRONTEND_URL}?token=${token}`;
       
       // Token'ı veritabanına kaydet
-      await deepLinkTokens.set(token, {
-        telegramId: chatId,
-        expiresAt: Date.now() + 24 * 60 * 60 * 1000 // 24 saat
+      await Token.create({
+        token,
+        userId: user._id,
+        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 1 yıl
       });
 
       await bot.sendMessage(chatId, 
         `Merhaba ${username}! Sohbet uygulamasına hoş geldiniz.\n\n` +
         `Giriş yapmak için aşağıdaki linke tıklayın:\n${deepLinkUrl}\n\n` +
-        `Bu link 24 saat geçerlidir.`
+        `Bu link süresiz geçerlidir. İlk kullanımda kendinize özel bir şifre belirleyebilirsiniz.`
       );
 
       res.status(200).json({ success: true });

@@ -501,4 +501,74 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--tg-theme-accent-color);
+}
+
+.password-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+  width: 100%;
+}
+
+.password-form input {
+  padding: 12px;
+  background: var(--tg-theme-bg-color);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: var(--tg-theme-text-color);
+  font-size: 1em;
+  transition: border-color 0.3s;
+}
+
+.password-form input:focus {
+  outline: none;
+  border-color: var(--tg-theme-link-color);
+}
+
+.password-form input::placeholder {
+  color: var(--tg-theme-hint-color);
+}
+
+.password-form button {
+  padding: 12px;
+  background: var(--tg-theme-button-color);
+  color: var(--tg-theme-button-text-color);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.3s;
+  font-weight: 600;
+}
+
+.password-form button:hover {
+  opacity: 0.9;
+}
+
+.password-form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error-message {
+  background: rgba(255, 59, 48, 0.1);
+  border: 1px solid var(--tg-theme-error-color);
+  border-radius: 8px;
+  padding: 15px;
+  margin: 15px 0;
+  color: var(--tg-theme-error-color);
+}
+
+.attempts-warning {
+  color: var(--tg-theme-error-color);
+  font-size: 0.9em;
+  margin-top: 10px;
+  text-align: center;
+}
+
+.last-command-info {
+  color: var(--tg-theme-hint-color);
+  font-size: 0.9em;
+  margin-top: 20px;
+  text-align: center;
 } 

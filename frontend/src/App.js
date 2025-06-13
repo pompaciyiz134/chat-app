@@ -26,7 +26,15 @@ function App() {
     privateMessageInput: '',
     privateMessages: {},
     lastStartCommand: null,
-    verificationError: null
+    verificationError: null,
+    showPasswordModal: false,
+    password: '',
+    confirmPassword: '',
+    passwordError: null,
+    isSettingPassword: false,
+    remainingAttempts: 5,
+    isLocked: false,
+    lockExpires: null
   });
 
   const messagesEndRef = useRef(null);
@@ -65,40 +73,112 @@ function App() {
 
   const verifyToken = async (token) => {
     try {
-      const response = await fetch(`${SOCKET_URL}/verify-token`, {
+      const linkData = await fetch(`${SOCKET_URL}/api/verify-link-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ token }),
-      });
+        body: JSON.stringify({ token, password: state.password }),
+      }).then(res => res.json());
 
-      const data = await response.json();
-
-      if (data.success) {
-        setState(prev => ({
-          ...prev,
-          isVerified: true,
-          username: data.username,
-          isLoading: false,
-          showLogin: false,
-          showChat: true,
-          lastStartCommand: data.lastStartCommand
-        }));
-      } else {
-        setState(prev => ({
-          ...prev,
-          isLoading: false,
-          showLogin: true,
-          verificationError: data.message || 'Token doğrulama hatası'
-        }));
+      if (!linkData.success) {
+        if (linkData.message.includes('kilitlendi')) {
+          setState(prev => ({
+            ...prev,
+            isLoading: false,
+            showLogin: true,
+            isLocked: true,
+            lockExpires: new Date(Date.now() + 15 * 60 * 1000),
+            verificationError: linkData.message
+          }));
+        } else if (linkData.message.includes('Geçersiz link')) {
+          setState(prev => ({
+            ...prev,
+            isLoading: false,
+            showLogin: true,
+            showPasswordModal: true,
+            password: '',
+            confirmPassword: ''
+          }));
+        } else {
+          setState(prev => ({
+            ...prev,
+            isLoading: false,
+            showLogin: true,
+            remainingAttempts: linkData.remainingAttempts,
+            verificationError: linkData.message
+          }));
+        }
+        return;
       }
+
+      setState(prev => ({
+        ...prev,
+        isVerified: true,
+        username: linkData.username,
+        isLoading: false,
+        showLogin: false,
+        showChat: true,
+        lastStartCommand: linkData.lastStartCommand,
+        showPasswordModal: false,
+        password: '',
+        confirmPassword: ''
+      }));
     } catch (error) {
       setState(prev => ({
         ...prev,
         isLoading: false,
         showLogin: true,
         verificationError: 'Sunucu hatası'
+      }));
+    }
+  };
+
+  const handleSetPassword = async () => {
+    if (state.password !== state.confirmPassword) {
+      setState(prev => ({
+        ...prev,
+        passwordError: 'Şifreler eşleşmiyor'
+      }));
+      return;
+    }
+
+    if (state.password.length < 6) {
+      setState(prev => ({
+        ...prev,
+        passwordError: 'Şifre en az 6 karakter olmalıdır'
+      }));
+      return;
+    }
+
+    setState(prev => ({ ...prev, isSettingPassword: true, passwordError: null }));
+
+    try {
+      const token = new URLSearchParams(window.location.search).get('token');
+      const response = await fetch(`${SOCKET_URL}/api/set-link-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token, password: state.password }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        await verifyToken(token);
+      } else {
+        setState(prev => ({
+          ...prev,
+          passwordError: data.message,
+          isSettingPassword: false
+        }));
+      }
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        passwordError: 'Sunucu hatası',
+        isSettingPassword: false
       }));
     }
   };
@@ -288,6 +368,44 @@ function App() {
     );
   }
 
+  if (state.showPasswordModal) {
+    return (
+      <div className="login-screen">
+        <div className="login-content">
+          <h1>Şifre Belirle</h1>
+          <p>Bu link için güvenli bir şifre belirleyin.</p>
+          {state.passwordError && (
+            <div className="error-message">
+              <p>{state.passwordError}</p>
+            </div>
+          )}
+          <div className="password-form">
+            <input
+              type="password"
+              value={state.password}
+              onChange={(e) => setState(prev => ({ ...prev, password: e.target.value }))}
+              placeholder="Şifre"
+              disabled={state.isSettingPassword}
+            />
+            <input
+              type="password"
+              value={state.confirmPassword}
+              onChange={(e) => setState(prev => ({ ...prev, confirmPassword: e.target.value }))}
+              placeholder="Şifre (Tekrar)"
+              disabled={state.isSettingPassword}
+            />
+            <button 
+              onClick={handleSetPassword}
+              disabled={state.isSettingPassword}
+            >
+              {state.isSettingPassword ? 'Şifre Belirleniyor...' : 'Şifre Belirle'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (state.showLogin) {
     return (
       <div className="login-screen">
@@ -296,7 +414,29 @@ function App() {
           {state.verificationError ? (
             <div className="error-message">
               <p>{state.verificationError}</p>
-              <p>Lütfen Telegram botunuza gidip /start komutunu gönderin.</p>
+              {state.isLocked ? (
+                <p>Kalan süre: {Math.ceil((state.lockExpires - new Date()) / (1000 * 60))} dakika</p>
+              ) : (
+                <>
+                  <p>Lütfen şifrenizi girin:</p>
+                  <div className="password-form">
+                    <input
+                      type="password"
+                      value={state.password}
+                      onChange={(e) => setState(prev => ({ ...prev, password: e.target.value }))}
+                      placeholder="Şifre"
+                    />
+                    <button onClick={() => verifyToken(new URLSearchParams(window.location.search).get('token'))}>
+                      Giriş Yap
+                    </button>
+                  </div>
+                  {state.remainingAttempts < 5 && (
+                    <p className="attempts-warning">
+                      Kalan deneme hakkı: {state.remainingAttempts}
+                    </p>
+                  )}
+                </>
+              )}
             </div>
           ) : (
             <>

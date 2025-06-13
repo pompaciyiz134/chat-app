@@ -375,4 +375,92 @@ body {
   .message {
     max-width: 85%;
   }
+}
+
+/* Özel Sohbet Modalı */
+.private-chat {
+  display: flex;
+  flex-direction: column;
+  height: 80vh;
+  max-width: 600px;
+  width: 90%;
+}
+
+.private-chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.private-chat-header h3 {
+  margin: 0;
+  color: #1a1a1a;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #666;
+  cursor: pointer;
+  padding: 0 5px;
+}
+
+.close-button:hover {
+  color: #e74c3c;
+}
+
+.private-messages-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 5px;
+  margin: 15px 0;
+}
+
+.private-messages-list .message {
+  margin-bottom: 10px;
+  max-width: 80%;
+}
+
+.private-messages-list .message-time {
+  font-size: 11px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.private-messages-list .message.sent {
+  margin-left: auto;
+}
+
+.private-messages-list .message.received {
+  margin-right: auto;
+}
+
+.private-messages-list .message-content {
+  padding: 8px 12px;
+  border-radius: 12px;
+}
+
+.private-messages-list .message.sent .message-content {
+  background-color: #3498db;
+  color: white;
+}
+
+.private-messages-list .message.received .message-content {
+  background-color: #e9ecef;
+  color: #1a1a1a;
+}
+
+/* Kullanıcı listesi güncellemeleri */
+.user-item {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.user-item:hover {
+  background-color: #e9ecef;
 } 

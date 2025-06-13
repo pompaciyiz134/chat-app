@@ -27,7 +27,10 @@ function App() {
     privateMessages: {},
     replyTo: null,
     showNewRoomModal: false,
-    newRoomName: ""
+    newRoomName: "",
+    showPrivateChat: false,
+    selectedPrivateUser: null,
+    privateMessageInput: ""
   });
 
   // State güncelleme fonksiyonu
@@ -38,6 +41,7 @@ function App() {
   // Refs
   const messagesEndRef = useRef(null);
   const socketRef = useRef();
+  const privateMessagesEndRef = useRef(null);
 
   // Backend bağlantısını kontrol et
   useEffect(() => {
@@ -118,6 +122,16 @@ function App() {
       scrollToBottom();
     });
 
+    socket.on("privateMessage", (message) => {
+      updateState(prev => ({
+        privateMessages: {
+          ...prev.privateMessages,
+          [message.from]: [...(prev.privateMessages[message.from] || []), message]
+        }
+      }));
+      scrollPrivateToBottom();
+    });
+
     socket.on("userList", (userList) => {
       updateState({ users: userList });
     });
@@ -128,6 +142,10 @@ function App() {
   // Mesajları en alta kaydır
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const scrollPrivateToBottom = () => {
+    privateMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   // Mesaj gönderme
@@ -142,6 +160,19 @@ function App() {
     });
 
     updateState({ message: "" });
+  };
+
+  // Özel mesaj gönderme
+  const sendPrivateMessage = (e) => {
+    e.preventDefault();
+    if (!state.privateMessageInput.trim() || !socketRef.current || !state.selectedPrivateUser) return;
+
+    socketRef.current.emit("privateMessage", {
+      to: state.selectedPrivateUser.id,
+      text: state.privateMessageInput
+    });
+
+    updateState({ privateMessageInput: "" });
   };
 
   // Oda değiştirme
@@ -171,6 +202,23 @@ function App() {
     }
   };
 
+  // Özel sohbet başlatma
+  const startPrivateChat = (user) => {
+    updateState({
+      showPrivateChat: true,
+      selectedPrivateUser: user
+    });
+  };
+
+  // Özel sohbeti kapatma
+  const closePrivateChat = () => {
+    updateState({
+      showPrivateChat: false,
+      selectedPrivateUser: null,
+      privateMessageInput: ""
+    });
+  };
+
   // Çıkış yapma
   const handleLogout = () => {
     if (socketRef.current) {
@@ -187,7 +235,10 @@ function App() {
       user: null,
       selectedUser: null,
       privateMessages: {},
-      replyTo: null
+      replyTo: null,
+      showPrivateChat: false,
+      selectedPrivateUser: null,
+      privateMessageInput: ""
     });
   };
 
@@ -285,8 +336,12 @@ function App() {
           <div className="users-container">
             <h3>Çevrimiçi Kullanıcılar</h3>
             {state.users.map((user) => (
-              <div key={user.id} className="user-item">
-                {user.username}
+              <div 
+                key={user.id} 
+                className="user-item"
+                onClick={() => startPrivateChat(user)}
+              >
+                <span>{user.username}</span>
                 {user.isAdmin && <span className="admin-badge">Admin</span>}
               </div>
             ))}
@@ -314,6 +369,44 @@ function App() {
                 İptal
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Özel Sohbet Modalı */}
+      {state.showPrivateChat && state.selectedPrivateUser && (
+        <div className="modal-overlay">
+          <div className="modal-content private-chat">
+            <div className="private-chat-header">
+              <h3>{state.selectedPrivateUser.username} ile Özel Sohbet</h3>
+              <button onClick={closePrivateChat} className="close-button">×</button>
+            </div>
+            <div className="private-messages-list">
+              {state.privateMessages[state.selectedPrivateUser.id]?.map((msg, index) => (
+                <div
+                  key={index}
+                  className={`message ${msg.from === state.username ? "sent" : "received"}`}
+                >
+                  <div className="message-content">{msg.text}</div>
+                  <div className="message-time">
+                    {new Date(msg.time).toLocaleTimeString()}
+                  </div>
+                </div>
+              ))}
+              <div ref={privateMessagesEndRef} />
+            </div>
+            <form className="message-form" onSubmit={sendPrivateMessage}>
+              <input
+                type="text"
+                className="message-input"
+                value={state.privateMessageInput}
+                onChange={(e) => updateState({ privateMessageInput: e.target.value })}
+                placeholder="Özel mesajınızı yazın..."
+              />
+              <button type="submit" className="send-button">
+                Gönder
+              </button>
+            </form>
           </div>
         </div>
       )}

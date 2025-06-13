@@ -195,58 +195,143 @@ app.post("/api/telegram/verify", async (req, res) => {
   }
 });
 
-// Webhook endpoint
-app.post("/telegram/webhook", express.json(), async (req, res) => {
+// Telegram webhook endpoint
+app.post("/telegram/webhook", async (req, res) => {
   try {
-    console.log("Webhook'a gelen veri:", JSON.stringify(req.body, null, 2));
-    
-    const update = req.body;
-    if (!update || !update.message) {
-      console.log("Geçersiz webhook verisi");
+    console.log("Telegram webhook'a istek geldi:", JSON.stringify(req.body, null, 2));
+    const { message } = req.body;
+
+    if (!message) {
+      console.log("Mesaj içeriği yok:", req.body);
       return res.sendStatus(200);
     }
 
-    const msg = update.message;
-    const chatId = msg.chat.id;
+    const { text, from, chat } = message;
+    console.log("Gelen mesaj detayları:", {
+      text,
+      from: {
+        id: from.id,
+        username: from.username,
+        first_name: from.first_name
+      },
+      chat: {
+        id: chat.id,
+        type: chat.type
+      }
+    });
 
-    if (msg.text) {
-      console.log("Gelen mesaj:", msg.text, "Chat ID:", chatId);
+    if (text === "/start") {
+      console.log("Start komutu alındı, doğrulama başlatılıyor...");
+      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const userId = from.id.toString();
       
-      if (msg.text.startsWith("/start")) {
-        const code = generateVerificationCode();
-        console.log("Yeni doğrulama kodu oluşturuldu:", code);
+      try {
+        // Kullanıcıyı veritabanında ara veya oluştur
+        let user = await User.findOne({ telegramId: userId });
         
-        verificationCodes.set(code, {
-          telegramId: msg.from.id.toString(),
-          username: msg.from.username || msg.from.first_name,
-          firstName: msg.from.first_name
-        });
-        console.log("Kod kaydedildi, mevcut kodlar:", Array.from(verificationCodes.keys()));
-
-        try {
-          await bot.sendMessage(chatId, 
-            `Merhaba ${msg.from.first_name}! Sohbet uygulamasına hoş geldiniz.\n\n` +
-            `Doğrulama kodunuz: ${code}\n\n` +
-            `Bu kodu web sitesinde kullanarak giriş yapabilirsiniz.\n\n` +
-            `Not: Bu kod 5 dakika geçerlidir.`
-          );
-          console.log("Doğrulama kodu mesajı gönderildi");
-        } catch (error) {
-          console.error("Mesaj gönderme hatası:", error);
+        if (!user) {
+          console.log("Yeni kullanıcı oluşturuluyor:", userId);
+          user = new User({
+            telegramId: userId,
+            username: from.username || `user_${userId}`,
+            verificationCode,
+            isVerified: false
+          });
+        } else {
+          console.log("Mevcut kullanıcı güncelleniyor:", userId);
+          user.verificationCode = verificationCode;
+          user.isVerified = false;
         }
 
-        // 5 dakika sonra kodu sil
-        setTimeout(() => {
-          console.log("Kod süresi doldu, siliniyor:", code);
-          verificationCodes.delete(code);
-        }, 5 * 60 * 1000);
+        await user.save();
+        console.log("Kullanıcı kaydedildi:", {
+          telegramId: user.telegramId,
+          username: user.username,
+          verificationCode: user.verificationCode,
+          isVerified: user.isVerified
+        });
+
+        const response = await bot.sendMessage(
+          chat.id,
+          `Merhaba! Web uygulamasında doğrulama için kullanacağınız kod: ${verificationCode}\n\nBu kodu web uygulamasındaki doğrulama alanına girin.`
+        );
+        console.log("Doğrulama mesajı gönderildi:", response);
+      } catch (error) {
+        console.error("Kullanıcı kaydetme/doğrulama mesajı gönderme hatası:", error);
+        await bot.sendMessage(chat.id, "Üzgünüm, bir hata oluştu. Lütfen daha sonra tekrar deneyin.");
       }
+    } else if (text === "/rooms") {
+      console.log("Rooms komutu alındı");
+      const rooms = Array.from(io.sockets.adapter.rooms.keys())
+        .filter(room => room.startsWith("room_"))
+        .map(room => room.replace("room_", ""));
+      
+      if (rooms.length === 0) {
+        await bot.sendMessage(chat.id, "Şu anda aktif oda bulunmuyor.");
+      } else {
+        const message = "Aktif odalar:\n" + rooms.map(room => `- ${room}`).join("\n");
+        await bot.sendMessage(chat.id, message);
+      }
+    } else if (text.startsWith("/join ")) {
+      console.log("Join komutu alındı");
+      const roomName = text.split(" ")[1];
+      if (!roomName) {
+        await bot.sendMessage(chat.id, "Lütfen bir oda adı belirtin. Örnek: /join genel");
+        return;
+      }
+
+      const roomId = `room_${roomName}`;
+      if (!io.sockets.adapter.rooms.has(roomId)) {
+        await bot.sendMessage(chat.id, "Bu oda mevcut değil. /rooms komutu ile mevcut odaları görebilirsiniz.");
+        return;
+      }
+
+      // Kullanıcıyı odaya ekle
+      const userId = from.id.toString();
+      const user = await User.findOne({ telegramId: userId });
+      
+      if (!user || !user.isVerified) {
+        await bot.sendMessage(chat.id, "Önce /start komutu ile doğrulama yapmalısınız.");
+        return;
+      }
+
+      // Kullanıcıyı odaya ekle ve bilgilendir
+      await bot.sendMessage(chat.id, `${roomName} odasına katıldınız. Artık bu odaya mesaj gönderebilirsiniz.`);
+    } else {
+      console.log("Normal mesaj alındı");
+      // Normal mesaj işleme
+      const userId = from.id.toString();
+      const user = await User.findOne({ telegramId: userId });
+      
+      if (!user || !user.isVerified) {
+        await bot.sendMessage(chat.id, "Önce /start komutu ile doğrulama yapmalısınız.");
+        return;
+      }
+
+      // Kullanıcının aktif olduğu odayı bul
+      const activeRoom = user.activeRoom;
+      if (!activeRoom) {
+        await bot.sendMessage(chat.id, "Bir odaya katılmak için /join <oda_adı> komutunu kullanın.");
+        return;
+      }
+
+      // Mesajı odaya gönder
+      const messageData = {
+        user: user.username,
+        text,
+        room: activeRoom,
+        time: new Date().toISOString(),
+        source: "telegram"
+      };
+
+      io.to(`room_${activeRoom}`).emit("message", messageData);
+      console.log("Telegram mesajı odaya iletildi:", messageData);
     }
-    
+
     res.sendStatus(200);
   } catch (error) {
     console.error("Webhook işleme hatası:", error);
-    res.sendStatus(200); // Telegram'a her zaman 200 dön
+    res.sendStatus(500);
   }
 });
 

@@ -79,6 +79,22 @@ const generateVerificationCode = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
+// Webhook'u ayarla
+const setupWebhook = async () => {
+  try {
+    await bot.setWebHook(WEBHOOK_URL, {
+      max_connections: 40,
+      allowed_updates: ["message"]
+    });
+    console.log("Telegram webhook başarıyla ayarlandı:", WEBHOOK_URL);
+  } catch (error) {
+    console.error("Webhook ayarlanırken hata:", error);
+  }
+};
+
+// Sunucu başladığında webhook'u ayarla
+setupWebhook();
+
 // Health check endpoint
 app.get("/", (req, res) => {
   res.json({ status: "ok", message: "Backend çalışıyor" });
@@ -133,15 +149,21 @@ app.post("/telegram/webhook", async (req, res) => {
         const code = generateVerificationCode();
         verificationCodes.set(code, {
           telegramId: msg.from.id.toString(),
-          username: msg.from.username,
+          username: msg.from.username || msg.from.first_name,
           firstName: msg.from.first_name
         });
 
         await bot.sendMessage(chatId, 
           `Merhaba ${msg.from.first_name}! Sohbet uygulamasına hoş geldiniz.\n\n` +
           `Doğrulama kodunuz: ${code}\n\n` +
-          `Bu kodu web sitesinde kullanarak giriş yapabilirsiniz.`
+          `Bu kodu web sitesinde kullanarak giriş yapabilirsiniz.\n\n` +
+          `Not: Bu kod 5 dakika geçerlidir.`
         );
+
+        // 5 dakika sonra kodu sil
+        setTimeout(() => {
+          verificationCodes.delete(code);
+        }, 5 * 60 * 1000);
       }
       else if (msg.text.startsWith("/rooms")) {
         const roomsList = Array.from(roomUsers.keys()).join("\n");

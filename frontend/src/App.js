@@ -280,7 +280,7 @@ function App() {
             <Text color="red.500">{connectionError}</Text>
             <Button onClick={() => window.location.reload()}>
               Yeniden Dene
-            </Button>
+              </Button>
           </VStack>
         </Box>
       </ChakraProvider>
@@ -576,7 +576,7 @@ function App() {
                         Admin
                       </Badge>
                     )}
-                  </Button>
+          </Button>
                 ))}
               </VStack>
             </VStack>
@@ -649,12 +649,12 @@ function App() {
                           locale: tr
                         })}
                       </Text>
-                      <Text>{msg.text}</Text>
+                  <Text>{msg.text}</Text>
                     </Box>
                   ))}
                 </Box>
                 <HStack w="100%">
-                  <Input
+            <Input
                     placeholder="Mesajınızı yazın..."
                     onKeyPress={(e) => {
                       if (e.key === "Enter" && e.target.value.trim()) {
@@ -666,7 +666,7 @@ function App() {
                       }
                     }}
                   />
-                </HStack>
+          </HStack>
               </VStack>
             </ModalBody>
           </ModalContent>

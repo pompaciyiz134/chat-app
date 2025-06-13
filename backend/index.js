@@ -103,25 +103,35 @@ app.get("/", (req, res) => {
 // Telegram doğrulama kodu endpoint'i
 app.post("/api/telegram/verify", async (req, res) => {
   const { code } = req.body;
+  console.log("Gelen doğrulama kodu:", code);
+  console.log("Mevcut kodlar:", Array.from(verificationCodes.keys()));
+  
   const telegramData = verificationCodes.get(code);
+  console.log("Telegram verisi:", telegramData);
   
   if (!telegramData) {
+    console.log("Geçersiz kod hatası");
     return res.status(400).json({ error: "Geçersiz kod" });
   }
 
   try {
     let user = await User.findOne({ telegramId: telegramData.telegramId });
+    console.log("Mevcut kullanıcı:", user);
     
     if (!user) {
+      console.log("Yeni kullanıcı oluşturuluyor");
       user = await User.create({
         telegramId: telegramData.telegramId,
         username: telegramData.username,
         displayName: telegramData.firstName,
         isAdmin: telegramData.telegramId === "8146375647"
       });
+      console.log("Yeni kullanıcı oluşturuldu:", user);
     }
 
     verificationCodes.delete(code);
+    console.log("Doğrulama başarılı, kod silindi");
+    
     res.json({ 
       success: true, 
       user: {
@@ -132,6 +142,7 @@ app.post("/api/telegram/verify", async (req, res) => {
       }
     });
   } catch (error) {
+    console.error("Kullanıcı oluşturma hatası:", error);
     res.status(500).json({ error: "Kullanıcı oluşturulamadı" });
   }
 });
@@ -139,6 +150,7 @@ app.post("/api/telegram/verify", async (req, res) => {
 // Webhook endpoint
 app.post("/telegram/webhook", async (req, res) => {
   const update = req.body;
+  console.log("Telegram webhook gelen veri:", update);
   
   if (update.message) {
     const msg = update.message;
@@ -147,11 +159,14 @@ app.post("/telegram/webhook", async (req, res) => {
     if (msg.text) {
       if (msg.text.startsWith("/start")) {
         const code = generateVerificationCode();
+        console.log("Yeni doğrulama kodu oluşturuldu:", code);
+        
         verificationCodes.set(code, {
           telegramId: msg.from.id.toString(),
           username: msg.from.username || msg.from.first_name,
           firstName: msg.from.first_name
         });
+        console.log("Kod kaydedildi, mevcut kodlar:", Array.from(verificationCodes.keys()));
 
         await bot.sendMessage(chatId, 
           `Merhaba ${msg.from.first_name}! Sohbet uygulamasına hoş geldiniz.\n\n` +
@@ -162,6 +177,7 @@ app.post("/telegram/webhook", async (req, res) => {
 
         // 5 dakika sonra kodu sil
         setTimeout(() => {
+          console.log("Kod süresi doldu, siliniyor:", code);
           verificationCodes.delete(code);
         }, 5 * 60 * 1000);
       }

@@ -162,6 +162,27 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // Backend bağlantısını kontrol et
+  useEffect(() => {
+    const checkBackendConnection = async () => {
+      try {
+        const response = await fetch(`${SERVER_URL}/`);
+        if (response.ok) {
+          setIsLoading(false);
+          setConnectionError(false);
+        } else {
+          throw new Error("Backend bağlantısı başarısız");
+        }
+      } catch (error) {
+        console.error("Backend bağlantı hatası:", error);
+        setIsLoading(false);
+        setConnectionError(true);
+      }
+    };
+
+    checkBackendConnection();
+  }, []);
+
   // Deep link token kontrolü
   useEffect(() => {
     const token = searchParams.get("token");

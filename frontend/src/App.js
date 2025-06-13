@@ -39,6 +39,8 @@ import { FaTelegram, FaReply, FaUser, FaSignOutAlt, FaMoon, FaSun } from "react-
 import { format } from "date-fns";
 import { tr } from "date-fns/locale";
 import io from "socket.io-client";
+import { useSearchParams } from "react-router-dom";
+import "./App.css";
 
 // Karanlık tema
 const theme = extendTheme({
@@ -67,11 +69,70 @@ const theme = extendTheme({
 
 const SERVER_URL = "https://chat-app-bb7l.onrender.com";
 
+// Telegram Login Widget script'ini ekle
+const TelegramLoginWidget = () => {
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://telegram.org/js/telegram-widget.js?22";
+    script.setAttribute("data-telegram-login", "klfh_bot");
+    script.setAttribute("data-size", "large");
+    script.setAttribute("data-radius", "8");
+    script.setAttribute("data-request-access", "write");
+    script.setAttribute("data-userpic", "false");
+    script.setAttribute("data-onauth", "onTelegramAuth(user)");
+    script.async = true;
+
+    // Telegram auth callback fonksiyonunu global scope'a ekle
+    window.onTelegramAuth = (user) => {
+      console.log("Telegram auth başarılı:", user);
+      // Backend'e doğrulama isteği gönder
+      fetch("https://chat-app-bb7l.onrender.com/api/telegram/verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: user.id,
+          first_name: user.first_name,
+          username: user.username,
+          photo_url: user.photo_url,
+          auth_date: user.auth_date,
+          hash: user.hash
+        }),
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          setUsername(data.username);
+          setShowLogin(false);
+          setShowChat(true);
+        } else {
+          alert("Doğrulama başarısız: " + data.message);
+        }
+      })
+      .catch(error => {
+        console.error("Doğrulama hatası:", error);
+        alert("Doğrulama sırasında bir hata oluştu");
+      });
+    };
+
+    document.getElementById("telegram-login-container").appendChild(script);
+
+    return () => {
+      // Cleanup
+      document.getElementById("telegram-login-container").removeChild(script);
+      delete window.onTelegramAuth;
+    };
+  }, []);
+
+  return <div id="telegram-login-container" className="telegram-login-container"></div>;
+};
+
 function App() {
   const [socket, setSocket] = useState(null);
   const [messages, setMessages] = useState([]);
   const [message, setMessage] = useState("");
-  const [room, setRoom] = useState("");
+  const [room, setRoom] = useState("genel");
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [connectionError, setConnectionError] = useState(null);
@@ -82,6 +143,11 @@ function App() {
   const [privateMessages, setPrivateMessages] = useState({});
   const [selectedUser, setSelectedUser] = useState(null);
   const [users, setUsers] = useState([]);
+  const [username, setUsername] = useState("");
+  const [showLogin, setShowLogin] = useState(true);
+  const [showChat, setShowChat] = useState(false);
+  const [searchParams] = useSearchParams();
+  const [verificationError, setVerificationError] = useState("");
 
   const { isOpen, onOpen, onClose } = useDisclosure();
   const { colorMode, toggleColorMode } = useColorMode();
@@ -90,49 +156,85 @@ function App() {
   const telegramModal = useDisclosure();
   const newRoomModal = useDisclosure();
   const [newRoomName, setNewRoomName] = useState("");
+  const socketRef = useRef();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // Deep link token kontrolü
   useEffect(() => {
-    const newSocket = io(SERVER_URL, {
+    const token = searchParams.get("token");
+    if (token) {
+      console.log("Deep link token bulundu:", token);
+      verifyDeepLinkToken(token);
+    }
+  }, [searchParams]);
+
+  // Deep link token doğrulama
+  const verifyDeepLinkToken = async (token) => {
+    try {
+      const response = await fetch(`${SERVER_URL}/api/telegram/deep-link?token=${token}`);
+      const data = await response.json();
+
+      if (data.success) {
+        console.log("Deep link doğrulama başarılı:", data);
+        setUsername(data.username);
+        setShowLogin(false);
+        setShowChat(true);
+        initializeSocket(data.userId);
+      } else {
+        console.error("Deep link doğrulama hatası:", data.message);
+        setVerificationError(data.message);
+      }
+    } catch (error) {
+      console.error("Deep link doğrulama hatası:", error);
+      setVerificationError("Doğrulama sırasında bir hata oluştu");
+    }
+  };
+
+  // Socket bağlantısını başlat
+  const initializeSocket = (userId) => {
+    const socket = io(SERVER_URL, {
       withCredentials: true,
       transports: ["websocket"],
       reconnectionAttempts: 5,
       reconnectionDelay: 1000
     });
 
-    newSocket.on("connect", () => {
+    socket.on("connect", () => {
       console.log("Socket.IO bağlantısı başarılı");
-      setIsLoading(false);
-      setConnectionError(null);
+      socket.emit("authenticate", { userId });
     });
 
-    newSocket.on("connect_error", (error) => {
+    socket.on("connect_error", (error) => {
       console.error("Socket.IO bağlantı hatası:", error);
       setConnectionError("Sunucuya bağlanılamadı. Lütfen daha sonra tekrar deneyin.");
       setIsLoading(false);
     });
 
-    newSocket.on("message", (msg) => {
+    socket.on("message", (msg) => {
       setMessages(prev => [...prev, msg]);
       scrollToBottom();
     });
 
-    newSocket.on("roomHistory", (history) => {
+    socket.on("roomHistory", (history) => {
       setMessages(history);
       scrollToBottom();
     });
 
-    newSocket.on("privateMessage", (msg) => {
+    socket.on("privateMessage", (msg) => {
       setPrivateMessages(prev => ({
         ...prev,
         [msg.from.id]: [...(prev[msg.from.id] || []), msg]
       }));
     });
 
-    newSocket.on("error", (error) => {
+    socket.on("userList", (userList) => {
+      setUsers(userList);
+    });
+
+    socket.on("error", (error) => {
       toast({
         title: "Hata",
         description: error,
@@ -142,10 +244,9 @@ function App() {
       });
     });
 
-    setSocket(newSocket);
-
-    return () => newSocket.close();
-  }, []);
+    setSocket(socket);
+    socketRef.current = socket;
+  };
 
   useEffect(() => {
     scrollToBottom();
@@ -165,7 +266,7 @@ function App() {
 
       if (data.success) {
         setUser(data.user);
-        socket.emit("authenticate", { userId: data.user.id });
+        socketRef.current.emit("authenticate", { userId: data.user.id });
         telegramModal.onClose();
         toast({
           title: "Giriş başarılı",
@@ -197,7 +298,7 @@ function App() {
   const handleJoinRoom = (roomName) => {
     if (!user) return;
     
-    socket.emit("join", { room: roomName });
+    socketRef.current.emit("join", { room: roomName });
     setSelectedRoom(roomName);
     setRoom(roomName);
     onClose();
@@ -215,7 +316,7 @@ function App() {
       return;
     }
 
-    socket.emit("join", { room: newRoomName });
+    socketRef.current.emit("join", { room: newRoomName });
     setSelectedRoom(newRoomName);
     setRoom(newRoomName);
     setNewRoomName("");
@@ -226,7 +327,7 @@ function App() {
     e.preventDefault();
     if (!message.trim() || !room || !user) return;
 
-    socket.emit("message", {
+    socketRef.current.emit("message", {
       room,
       text: message,
       replyTo: replyTo?.id
@@ -239,7 +340,7 @@ function App() {
   const handleSendPrivateMessage = (to, text) => {
     if (!text.trim() || !user) return;
 
-    socket.emit("privateMessage", { to, text });
+    socketRef.current.emit("privateMessage", { to, text });
   };
 
   const handleReply = (message) => {
@@ -301,47 +402,8 @@ function App() {
             <Text fontSize="2xl" fontWeight="bold">
               Sohbet Uygulaması
             </Text>
-            <Button
-              leftIcon={<FaTelegram />}
-              colorScheme="blue"
-              onClick={telegramModal.onOpen}
-            >
-              Telegram ile Giriş Yap
-            </Button>
+            <TelegramLoginWidget />
           </VStack>
-
-          <Modal isOpen={telegramModal.isOpen} onClose={telegramModal.onClose}>
-            <ModalOverlay />
-            <ModalContent bg="gray.800">
-              <ModalHeader>Telegram ile Giriş</ModalHeader>
-              <ModalCloseButton />
-              <ModalBody pb={6}>
-                <VStack spacing={4}>
-                  <Text>
-                    1. Telegram botunu başlatın: @klfh_bot
-                  </Text>
-                  <Text>
-                    2. Bot size bir doğrulama kodu gönderecek
-                  </Text>
-                  <FormControl>
-                    <FormLabel>Doğrulama Kodu</FormLabel>
-                    <Input
-                      value={verificationCode}
-                      onChange={(e) => setVerificationCode(e.target.value)}
-                      placeholder="6 haneli kodu girin"
-                    />
-                  </FormControl>
-                  <Button
-                    colorScheme="blue"
-                    onClick={handleTelegramLogin}
-                    isDisabled={!verificationCode}
-                  >
-                    Giriş Yap
-                  </Button>
-                </VStack>
-              </ModalBody>
-            </ModalContent>
-          </Modal>
         </Box>
       </ChakraProvider>
     );
@@ -576,7 +638,7 @@ function App() {
                         Admin
                       </Badge>
                     )}
-          </Button>
+                  </Button>
                 ))}
               </VStack>
             </VStack>
@@ -649,12 +711,12 @@ function App() {
                           locale: tr
                         })}
                       </Text>
-                  <Text>{msg.text}</Text>
+                      <Text>{msg.text}</Text>
                     </Box>
                   ))}
                 </Box>
                 <HStack w="100%">
-            <Input
+                  <Input
                     placeholder="Mesajınızı yazın..."
                     onKeyPress={(e) => {
                       if (e.key === "Enter" && e.target.value.trim()) {
@@ -666,7 +728,7 @@ function App() {
                       }
                     }}
                   />
-          </HStack>
+                </HStack>
               </VStack>
             </ModalBody>
           </ModalContent>

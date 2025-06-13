@@ -66,38 +66,111 @@ const io = new Server(server, {
   }
 });
 
-// Telegram Bot setup
+// Telegram bot token ve webhook URL
 const TELEGRAM_TOKEN = "8070821143:AAG20-yS1J4hxoNB50e5eH2A3GYME3p7CXM";
 const WEBHOOK_URL = "https://chat-app-bb7l.onrender.com/telegram/webhook";
-const bot = new TelegramBot(TELEGRAM_TOKEN, { 
-  polling: false
-});
+const BOT_USERNAME = "klfh_bot";
+const FRONTEND_URL = "https://chat-app-1-bhl9.onrender.com";
 
-// Doğrulama kodları için geçici depo
-const verificationCodes = new Map();
+// Telegram bot oluştur
+const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
 
-// 6 haneli kod oluştur
-const generateVerificationCode = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+// Deep link token'ları için geçici depo (gerçek uygulamada Redis kullanılabilir)
+const deepLinkTokens = new Map();
+
+// Deep link token oluştur
+const generateDeepLinkToken = () => {
+  const token = uuidv4();
+  const expiresAt = Date.now() + 5 * 60 * 1000; // 5 dakika geçerli
+  return { token, expiresAt };
 };
+
+// Telegram Login Widget doğrulama
+const verifyTelegramLogin = (authData) => {
+  const { hash, ...userData } = authData;
+  const dataCheckString = Object.keys(userData)
+    .sort()
+    .map(k => `${k}=${userData[k]}`)
+    .join('\n');
+  
+  const secretKey = crypto.createHash('sha256')
+    .update(TELEGRAM_TOKEN)
+    .digest();
+  
+  const calculatedHash = crypto.createHmac('sha256', secretKey)
+    .update(dataCheckString)
+    .digest('hex');
+  
+  return calculatedHash === hash;
+};
+
+// Telegram Login Widget doğrulama endpoint'i
+app.post("/api/telegram/verify", async (req, res) => {
+  try {
+    const authData = req.body;
+    console.log("Telegram auth verisi:", authData);
+
+    if (!verifyTelegramLogin(authData)) {
+      console.log("Telegram doğrulama başarısız - hash eşleşmiyor");
+      return res.json({ success: false, message: "Geçersiz doğrulama" });
+    }
+
+    // Kullanıcıyı veritabanında ara veya oluştur
+    let user = await User.findOne({ telegramId: authData.id.toString() });
+    
+    if (!user) {
+      console.log("Yeni kullanıcı oluşturuluyor:", authData.id);
+      user = new User({
+        telegramId: authData.id.toString(),
+        username: authData.username || `user_${authData.id}`,
+        firstName: authData.first_name,
+        photoUrl: authData.photo_url,
+        isVerified: true
+      });
+    } else {
+      console.log("Mevcut kullanıcı güncelleniyor:", authData.id);
+      user.username = authData.username || user.username;
+      user.firstName = authData.first_name;
+      user.photoUrl = authData.photo_url;
+      user.isVerified = true;
+    }
+
+    await user.save();
+    console.log("Kullanıcı kaydedildi:", {
+      telegramId: user.telegramId,
+      username: user.username,
+      isVerified: user.isVerified
+    });
+
+    res.json({
+      success: true,
+      username: user.username,
+      userId: user._id
+    });
+  } catch (error) {
+    console.error("Telegram doğrulama hatası:", error);
+    res.status(500).json({ success: false, message: "Sunucu hatası" });
+  }
+});
 
 // Test endpoint'i
 app.get("/api/telegram/test", async (req, res) => {
   try {
     const botInfo = await bot.getMe();
-    console.log("Bot bilgileri:", botInfo);
-    
-    const webhookInfo = await bot.getWebHookInfo();
-    console.log("Webhook bilgileri:", webhookInfo);
+    const webhookInfo = await bot.getWebhookInfo();
     
     res.json({
       botInfo,
       webhookInfo,
-      webhookUrl: WEBHOOK_URL
+      webhookUrl: WEBHOOK_URL,
+      message: "Telegram bot ayarları başarılı"
     });
   } catch (error) {
-    console.error("Bot test hatası:", error);
-    res.status(500).json({ error: error.message });
+    console.error("Test endpoint hatası:", error);
+    res.status(500).json({
+      error: "Telegram bot testi başarısız",
+      details: error.message
+    });
   }
 });
 
@@ -148,50 +221,50 @@ app.get("/", (req, res) => {
   res.json({ status: "ok", message: "Backend çalışıyor" });
 });
 
-// Telegram doğrulama kodu endpoint'i
-app.post("/api/telegram/verify", async (req, res) => {
-  const { code } = req.body;
-  console.log("Gelen doğrulama kodu:", code);
-  console.log("Mevcut kodlar:", Array.from(verificationCodes.keys()));
-  
-  const telegramData = verificationCodes.get(code);
-  console.log("Telegram verisi:", telegramData);
-  
-  if (!telegramData) {
-    console.log("Geçersiz kod hatası");
-    return res.status(400).json({ error: "Geçersiz kod" });
-  }
-
+// Deep link endpoint'i
+app.get("/api/telegram/deep-link", async (req, res) => {
   try {
-    let user = await User.findOne({ telegramId: telegramData.telegramId });
-    console.log("Mevcut kullanıcı:", user);
-    
-    if (!user) {
-      console.log("Yeni kullanıcı oluşturuluyor");
-      user = await User.create({
-        telegramId: telegramData.telegramId,
-        username: telegramData.username,
-        displayName: telegramData.firstName,
-        isAdmin: telegramData.telegramId === "8146375647"
+    const { token } = req.query;
+    console.log("Deep link token kontrolü:", token);
+
+    if (!token || !deepLinkTokens.has(token)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Geçersiz veya süresi dolmuş token" 
       });
-      console.log("Yeni kullanıcı oluşturuldu:", user);
     }
 
-    verificationCodes.delete(code);
-    console.log("Doğrulama başarılı, kod silindi");
-    
-    res.json({ 
-      success: true, 
-      user: {
-        id: user._id,
-        username: user.username,
-        displayName: user.displayName,
-        isAdmin: user.isAdmin
-      }
+    const tokenData = deepLinkTokens.get(token);
+    if (Date.now() > tokenData.expiresAt) {
+      deepLinkTokens.delete(token);
+      return res.status(400).json({ 
+        success: false, 
+        message: "Token süresi dolmuş" 
+      });
+    }
+
+    const user = await User.findOne({ telegramId: tokenData.telegramId });
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Kullanıcı bulunamadı" 
+      });
+    }
+
+    // Token'ı kullanıldığı için sil
+    deepLinkTokens.delete(token);
+
+    res.json({
+      success: true,
+      username: user.username,
+      userId: user._id
     });
   } catch (error) {
-    console.error("Kullanıcı oluşturma hatası:", error);
-    res.status(500).json({ error: "Kullanıcı oluşturulamadı" });
+    console.error("Deep link doğrulama hatası:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Sunucu hatası" 
+    });
   }
 });
 
@@ -221,8 +294,7 @@ app.post("/telegram/webhook", async (req, res) => {
     });
 
     if (text === "/start") {
-      console.log("Start komutu alındı, doğrulama başlatılıyor...");
-      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+      console.log("Start komutu alındı, deep link oluşturuluyor...");
       const userId = from.id.toString();
       
       try {
@@ -234,30 +306,29 @@ app.post("/telegram/webhook", async (req, res) => {
           user = new User({
             telegramId: userId,
             username: from.username || `user_${userId}`,
-            verificationCode,
+            firstName: from.first_name,
             isVerified: false
           });
-        } else {
-          console.log("Mevcut kullanıcı güncelleniyor:", userId);
-          user.verificationCode = verificationCode;
-          user.isVerified = false;
+          await user.save();
         }
 
-        await user.save();
-        console.log("Kullanıcı kaydedildi:", {
-          telegramId: user.telegramId,
-          username: user.username,
-          verificationCode: user.verificationCode,
-          isVerified: user.isVerified
+        // Deep link token oluştur
+        const { token, expiresAt } = generateDeepLinkToken();
+        deepLinkTokens.set(token, {
+          telegramId: userId,
+          expiresAt
         });
 
+        // Deep link URL'i oluştur
+        const deepLinkUrl = `${FRONTEND_URL}/verify?token=${token}`;
+        
         const response = await bot.sendMessage(
           chat.id,
-          `Merhaba! Web uygulamasında doğrulama için kullanacağınız kod: ${verificationCode}\n\nBu kodu web uygulamasındaki doğrulama alanına girin.`
+          `Merhaba! Web uygulamasına giriş yapmak için aşağıdaki linke tıklayın:\n\n${deepLinkUrl}\n\nBu link 5 dakika geçerlidir.`
         );
-        console.log("Doğrulama mesajı gönderildi:", response);
+        console.log("Deep link mesajı gönderildi:", response);
       } catch (error) {
-        console.error("Kullanıcı kaydetme/doğrulama mesajı gönderme hatası:", error);
+        console.error("Deep link oluşturma hatası:", error);
         await bot.sendMessage(chat.id, "Üzgünüm, bir hata oluştu. Lütfen daha sonra tekrar deneyin.");
       }
     } else if (text === "/rooms") {

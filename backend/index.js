@@ -69,7 +69,12 @@ const io = new Server(server, {
 // Telegram Bot setup
 const TELEGRAM_TOKEN = "8070821143:AAG20-yS1J4hxoNB50e5eH2A3GYME3p7CXM";
 const WEBHOOK_URL = "https://chat-app-bb7l.onrender.com/telegram/webhook";
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
+const bot = new TelegramBot(TELEGRAM_TOKEN, { 
+  polling: false,
+  webHook: {
+    port: process.env.PORT || 5000
+  }
+});
 
 // Doğrulama kodları için geçici depo
 const verificationCodes = new Map();
@@ -107,11 +112,12 @@ const setupWebhook = async () => {
     console.log("Mevcut webhook kaldırıldı");
 
     // Yeni webhook'u ayarla
-    await bot.setWebHook(WEBHOOK_URL, {
+    const result = await bot.setWebHook(WEBHOOK_URL, {
       max_connections: 40,
-      allowed_updates: ["message"]
+      allowed_updates: ["message"],
+      drop_pending_updates: true // Bekleyen güncellemeleri temizle
     });
-    console.log("Telegram webhook başarıyla ayarlandı:", WEBHOOK_URL);
+    console.log("Webhook ayarlama sonucu:", result);
 
     // Webhook bilgilerini kontrol et
     const webhookInfo = await bot.getWebHookInfo();
@@ -122,7 +128,11 @@ const setupWebhook = async () => {
 };
 
 // Sunucu başladığında webhook'u ayarla
-setupWebhook();
+server.listen(PORT, async () => {
+  console.log(`Server running on port ${PORT}`);
+  await setupWebhook();
+  console.log("Telegram bot webhook modunda başlatıldı");
+});
 
 // Health check endpoint
 app.get("/", (req, res) => {
@@ -177,15 +187,22 @@ app.post("/api/telegram/verify", async (req, res) => {
 });
 
 // Webhook endpoint
-app.post("/telegram/webhook", async (req, res) => {
-  const update = req.body;
-  console.log("Telegram webhook gelen veri:", update);
-  
-  if (update.message) {
+app.post("/telegram/webhook", express.json(), async (req, res) => {
+  try {
+    console.log("Webhook'a gelen veri:", JSON.stringify(req.body, null, 2));
+    
+    const update = req.body;
+    if (!update || !update.message) {
+      console.log("Geçersiz webhook verisi");
+      return res.sendStatus(200);
+    }
+
     const msg = update.message;
     const chatId = msg.chat.id;
 
     if (msg.text) {
+      console.log("Gelen mesaj:", msg.text, "Chat ID:", chatId);
+      
       if (msg.text.startsWith("/start")) {
         const code = generateVerificationCode();
         console.log("Yeni doğrulama kodu oluşturuldu:", code);
@@ -197,12 +214,17 @@ app.post("/telegram/webhook", async (req, res) => {
         });
         console.log("Kod kaydedildi, mevcut kodlar:", Array.from(verificationCodes.keys()));
 
-        await bot.sendMessage(chatId, 
-          `Merhaba ${msg.from.first_name}! Sohbet uygulamasına hoş geldiniz.\n\n` +
-          `Doğrulama kodunuz: ${code}\n\n` +
-          `Bu kodu web sitesinde kullanarak giriş yapabilirsiniz.\n\n` +
-          `Not: Bu kod 5 dakika geçerlidir.`
-        );
+        try {
+          await bot.sendMessage(chatId, 
+            `Merhaba ${msg.from.first_name}! Sohbet uygulamasına hoş geldiniz.\n\n` +
+            `Doğrulama kodunuz: ${code}\n\n` +
+            `Bu kodu web sitesinde kullanarak giriş yapabilirsiniz.\n\n` +
+            `Not: Bu kod 5 dakika geçerlidir.`
+          );
+          console.log("Doğrulama kodu mesajı gönderildi");
+        } catch (error) {
+          console.error("Mesaj gönderme hatası:", error);
+        }
 
         // 5 dakika sonra kodu sil
         setTimeout(() => {
@@ -210,42 +232,13 @@ app.post("/telegram/webhook", async (req, res) => {
           verificationCodes.delete(code);
         }, 5 * 60 * 1000);
       }
-      else if (msg.text.startsWith("/rooms")) {
-        const roomsList = Array.from(roomUsers.keys()).join("\n");
-        bot.sendMessage(chatId, `Mevcut odalar:\n${roomsList || "Henüz oda yok"}`);
-      }
-      else if (msg.text.startsWith("/join ")) {
-        const roomName = msg.text.split(" ")[1].trim();
-        
-        // Add chat to room's Telegram chats
-        const chats = roomTelegramChats.get(roomName) || new Set();
-        chats.add(chatId);
-        roomTelegramChats.set(roomName, chats);
-        
-        bot.sendMessage(chatId, `${roomName} odasına katıldınız! Artık bu odadaki mesajları görebileceksiniz.`);
-        
-        // Notify web users
-        io.to(roomName).emit("message", { 
-          name: "Sistem", 
-          text: `Telegram kullanıcısı ${msg.from.first_name} odaya katıldı.` 
-        });
-      }
-      else {
-        // Normal mesaj işleme
-        for (const [room, chats] of roomTelegramChats.entries()) {
-          if (chats.has(chatId)) {
-            io.to(room).emit("message", {
-              name: `Telegram: ${msg.from.first_name}`,
-              text: msg.text
-            });
-            break;
-          }
-        }
-      }
     }
+    
+    res.sendStatus(200);
+  } catch (error) {
+    console.error("Webhook işleme hatası:", error);
+    res.sendStatus(200); // Telegram'a her zaman 200 dön
   }
-  
-  res.sendStatus(200);
 });
 
 // Socket.IO bağlantı yönetimi

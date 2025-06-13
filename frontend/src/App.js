@@ -1,387 +1,426 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import io from "socket.io-client";
-import { useSearchParams } from "react-router-dom";
-import "./App.css";
+import React, { useState, useEffect, useRef } from 'react';
+import io from 'socket.io-client';
+import './App.css';
 
-const SERVER_URL = "https://chat-app-bb7l.onrender.com";
+const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:3001';
 
 function App() {
-  // URL parametreleri
-  const [searchParams] = useSearchParams();
-
-  // State tanımlamaları
   const [state, setState] = useState({
-    username: "",
-    message: "",
-    messages: [],
-    room: "genel",
+    socket: null,
+    username: '',
+    isConnected: false,
+    isVerified: false,
     showLogin: true,
     showChat: false,
+    messages: [],
+    rooms: [],
     users: [],
+    currentRoom: 'genel',
+    messageInput: '',
+    error: null,
     isLoading: true,
-    connectionError: false,
-    verificationError: "",
-    user: null,
-    rooms: ["genel"],
-    selectedUser: null,
-    privateMessages: {},
-    replyTo: null,
     showNewRoomModal: false,
-    newRoomName: "",
+    newRoomName: '',
     showPrivateChat: false,
     selectedPrivateUser: null,
-    privateMessageInput: ""
+    privateMessageInput: '',
+    privateMessages: {},
+    lastStartCommand: null,
+    verificationError: null
   });
 
-  // State güncelleme fonksiyonu
-  const updateState = useCallback((updates) => {
-    setState(prev => ({ ...prev, ...updates }));
-  }, []);
-
-  // Refs
   const messagesEndRef = useRef(null);
-  const socketRef = useRef();
   const privateMessagesEndRef = useRef(null);
 
-  // Backend bağlantısını kontrol et
-  useEffect(() => {
-    const checkBackendConnection = async () => {
-      try {
-        const response = await fetch(`${SERVER_URL}/`);
-        if (response.ok) {
-          updateState({ isLoading: false, connectionError: false });
-        } else {
-          throw new Error("Backend bağlantısı başarısız");
-        }
-      } catch (error) {
-        console.error("Backend bağlantı hatası:", error);
-        updateState({ isLoading: false, connectionError: true });
-      }
-    };
+  const scrollToBottom = (ref) => {
+    ref?.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
-    checkBackendConnection();
-  }, [updateState]);
-
-  // Deep link token kontrolü
   useEffect(() => {
-    const token = searchParams.get("token");
+    const token = new URLSearchParams(window.location.search).get('token');
     if (token) {
-      console.log("Deep link token bulundu:", token);
-      verifyDeepLinkToken(token);
+      verifyToken(token);
+    } else {
+      setState(prev => ({ ...prev, isLoading: false }));
     }
-  }, [searchParams]);
+  }, []);
 
-  // Deep link token doğrulama
-  const verifyDeepLinkToken = async (token) => {
+  useEffect(() => {
+    if (state.isVerified && !state.socket) {
+      initializeSocket();
+    }
+  }, [state.isVerified]);
+
+  useEffect(() => {
+    if (state.messages.length > 0) {
+      scrollToBottom(messagesEndRef);
+    }
+  }, [state.messages]);
+
+  useEffect(() => {
+    if (state.selectedPrivateUser && state.privateMessages[state.selectedPrivateUser]) {
+      scrollToBottom(privateMessagesEndRef);
+    }
+  }, [state.privateMessages, state.selectedPrivateUser]);
+
+  const verifyToken = async (token) => {
     try {
-      const response = await fetch(`${SERVER_URL}/api/telegram/deep-link?token=${token}`);
+      const response = await fetch(`${SOCKET_URL}/verify-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token }),
+      });
+
       const data = await response.json();
 
       if (data.success) {
-        console.log("Deep link doğrulama başarılı:", data);
-        updateState({
+        setState(prev => ({
+          ...prev,
+          isVerified: true,
           username: data.username,
+          isLoading: false,
           showLogin: false,
           showChat: true,
-          user: data.user
-        });
-        initializeSocket(data.userId);
+          lastStartCommand: data.lastStartCommand
+        }));
       } else {
-        console.error("Deep link doğrulama hatası:", data.message);
-        updateState({ verificationError: data.message });
+        setState(prev => ({
+          ...prev,
+          isLoading: false,
+          showLogin: true,
+          verificationError: data.message || 'Token doğrulama hatası'
+        }));
       }
     } catch (error) {
-      console.error("Deep link doğrulama hatası:", error);
-      updateState({ verificationError: "Doğrulama sırasında bir hata oluştu" });
+      setState(prev => ({
+        ...prev,
+        isLoading: false,
+        showLogin: true,
+        verificationError: 'Sunucu hatası'
+      }));
     }
   };
 
-  // Socket bağlantısını başlat
-  const initializeSocket = (userId) => {
-    const socket = io(SERVER_URL, {
-      withCredentials: true,
-      transports: ["websocket"],
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000
+  const initializeSocket = () => {
+    const socket = io(SOCKET_URL, {
+      query: {
+        username: state.username,
+        token: new URLSearchParams(window.location.search).get('token')
+      }
     });
 
-    socket.on("connect", () => {
-      console.log("Socket.IO bağlantısı başarılı");
-      socket.emit("authenticate", { userId });
+    socket.on('connect', () => {
+      setState(prev => ({
+        ...prev,
+        isConnected: true,
+        error: null
+      }));
     });
 
-    socket.on("connect_error", (error) => {
-      console.error("Socket.IO bağlantı hatası:", error);
-      updateState({ connectionError: true });
+    socket.on('disconnect', () => {
+      setState(prev => ({
+        ...prev,
+        isConnected: false,
+        error: 'Sunucu bağlantısı kesildi'
+      }));
     });
 
-    socket.on("message", (message) => {
-      updateState(prev => ({
+    socket.on('message', (message) => {
+      setState(prev => ({
+        ...prev,
         messages: [...prev.messages, message]
       }));
-      scrollToBottom();
     });
 
-    socket.on("privateMessage", (message) => {
-      updateState(prev => ({
+    socket.on('private-message', ({ from, message }) => {
+      setState(prev => ({
+        ...prev,
         privateMessages: {
           ...prev.privateMessages,
-          [message.from]: [...(prev.privateMessages[message.from] || []), message]
+          [from]: [...(prev.privateMessages[from] || []), message]
         }
       }));
-      scrollPrivateToBottom();
     });
 
-    socket.on("userList", (userList) => {
-      updateState({ users: userList });
-    });
-
-    socketRef.current = socket;
-  };
-
-  // Mesajları en alta kaydır
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  const scrollPrivateToBottom = () => {
-    privateMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  // Mesaj gönderme
-  const sendMessage = (e) => {
-    e.preventDefault();
-    if (!state.message.trim() || !socketRef.current) return;
-
-    socketRef.current.emit("message", {
-      room: state.room,
-      text: state.message,
-      user: state.username
-    });
-
-    updateState({ message: "" });
-  };
-
-  // Özel mesaj gönderme
-  const sendPrivateMessage = (e) => {
-    e.preventDefault();
-    if (!state.privateMessageInput.trim() || !socketRef.current || !state.selectedPrivateUser) return;
-
-    socketRef.current.emit("privateMessage", {
-      to: state.selectedPrivateUser.id,
-      text: state.privateMessageInput
-    });
-
-    updateState({ privateMessageInput: "" });
-  };
-
-  // Oda değiştirme
-  const changeRoom = (newRoom) => {
-    if (socketRef.current) {
-      socketRef.current.emit("join", { room: newRoom });
-      updateState({ room: newRoom });
-    }
-  };
-
-  // Yeni oda oluşturma
-  const createNewRoom = () => {
-    if (!state.newRoomName.trim()) return;
-    
-    const newRoom = state.newRoomName.trim();
-    if (!state.rooms.includes(newRoom)) {
-      updateState(prev => ({
-        rooms: [...prev.rooms, newRoom],
-        room: newRoom,
-        showNewRoomModal: false,
-        newRoomName: ""
+    socket.on('room-list', (rooms) => {
+      setState(prev => ({
+        ...prev,
+        rooms: rooms
       }));
-      
-      if (socketRef.current) {
-        socketRef.current.emit("join", { room: newRoom });
+    });
+
+    socket.on('user-list', (users) => {
+      setState(prev => ({
+        ...prev,
+        users: users.filter(user => user.username !== prev.username)
+      }));
+    }));
+
+    socket.on('error', (error) => {
+      setState(prev => ({
+        ...prev,
+        error: error.message
+      }));
+    });
+
+    setState(prev => ({
+      ...prev,
+      socket
+    }));
+
+    return () => {
+      socket.disconnect();
+    };
+  };
+
+  const handleSendMessage = (e) => {
+    e.preventDefault();
+    if (!state.messageInput.trim() || !state.socket) return;
+
+    const message = {
+      room: state.currentRoom,
+      content: state.messageInput,
+      username: state.username,
+      timestamp: new Date().toISOString()
+    };
+
+    state.socket.emit('message', message);
+    setState(prev => ({
+      ...prev,
+      messageInput: '',
+      messages: [...prev.messages, { ...message, isOwn: true }]
+    }));
+  };
+
+  const handleSendPrivateMessage = (e) => {
+    e.preventDefault();
+    if (!state.privateMessageInput.trim() || !state.socket || !state.selectedPrivateUser) return;
+
+    const message = {
+      content: state.privateMessageInput,
+      from: state.username,
+      to: state.selectedPrivateUser,
+      timestamp: new Date().toISOString()
+    };
+
+    state.socket.emit('private-message', message);
+    setState(prev => ({
+      ...prev,
+      privateMessageInput: '',
+      privateMessages: {
+        ...prev.privateMessages,
+        [state.selectedPrivateUser]: [
+          ...(prev.privateMessages[state.selectedPrivateUser] || []),
+          { ...message, isOwn: true }
+        ]
       }
+    }));
+  };
+
+  const handleRoomChange = (room) => {
+    if (state.socket) {
+      state.socket.emit('leave-room', state.currentRoom);
+      state.socket.emit('join-room', room);
+      setState(prev => ({
+        ...prev,
+        currentRoom: room,
+        messages: []
+      }));
     }
   };
 
-  // Özel sohbet başlatma
-  const startPrivateChat = (user) => {
-    updateState({
+  const handleStartPrivateChat = (username) => {
+    setState(prev => ({
+      ...prev,
       showPrivateChat: true,
-      selectedPrivateUser: user
-    });
+      selectedPrivateUser: username,
+      privateMessages: {
+        ...prev.privateMessages,
+        [username]: prev.privateMessages[username] || []
+      }
+    }));
   };
 
-  // Özel sohbeti kapatma
-  const closePrivateChat = () => {
-    updateState({
+  const handleClosePrivateChat = () => {
+    setState(prev => ({
+      ...prev,
       showPrivateChat: false,
-      selectedPrivateUser: null,
-      privateMessageInput: ""
+      selectedPrivateUser: null
+    }));
+  };
+
+  const handleCreateRoom = () => {
+    if (!state.newRoomName.trim() || !state.socket) return;
+
+    state.socket.emit('create-room', state.newRoomName);
+    setState(prev => ({
+      ...prev,
+      showNewRoomModal: false,
+      newRoomName: ''
+    }));
+  };
+
+  const formatTime = (timestamp) => {
+    return new Date(timestamp).toLocaleTimeString('tr-TR', {
+      hour: '2-digit',
+      minute: '2-digit'
     });
   };
 
-  // Çıkış yapma
-  const handleLogout = () => {
-    if (socketRef.current) {
-      socketRef.current.disconnect();
-    }
-    updateState({
-      username: "",
-      message: "",
-      messages: [],
-      room: "genel",
-      showLogin: true,
-      showChat: false,
-      users: [],
-      user: null,
-      selectedUser: null,
-      privateMessages: {},
-      replyTo: null,
-      showPrivateChat: false,
-      selectedPrivateUser: null,
-      privateMessageInput: ""
-    });
-  };
+  if (state.isLoading) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-spinner"></div>
+        <p>Yükleniyor...</p>
+      </div>
+    );
+  }
 
-  // Modal kapatma
-  const closeModal = () => {
-    updateState({ showNewRoomModal: false, newRoomName: "" });
-  };
+  if (state.error) {
+    return (
+      <div className="error-screen">
+        <h2>Hata</h2>
+        <p>{state.error}</p>
+        <button onClick={() => window.location.reload()}>Yeniden Dene</button>
+      </div>
+    );
+  }
 
-  return (
-    <div className="app-container">
-      {state.isLoading ? (
-        <div className="loading-screen">
-          <div className="loading-spinner"></div>
-          <p>Bağlanıyor...</p>
-        </div>
-      ) : state.connectionError ? (
-        <div className="error-screen">
-          <h2>Bağlantı Hatası</h2>
-          <p>Sunucuya bağlanılamadı. Lütfen daha sonra tekrar deneyin.</p>
-          <button onClick={() => window.location.reload()}>Yeniden Dene</button>
-        </div>
-      ) : state.showLogin ? (
-        <div className="login-screen">
+  if (state.showLogin) {
+    return (
+      <div className="login-screen">
+        <div className="login-content">
+          <h1>Telegram Chat</h1>
           {state.verificationError ? (
             <div className="error-message">
-              <h2>Doğrulama Hatası</h2>
               <p>{state.verificationError}</p>
-              <p>Lütfen Telegram botuna gidip /start komutunu tekrar gönderin.</p>
-              <a href="https://t.me/klfh_bot" target="_blank" rel="noopener noreferrer" className="telegram-button">
-                Telegram Botuna Git
-              </a>
+              <p>Lütfen Telegram botunuza gidip /start komutunu gönderin.</p>
             </div>
           ) : (
-            <div className="login-content">
-              <h1>Sohbet Uygulaması</h1>
-              <p>Giriş yapmak için Telegram botunu kullanın.</p>
-              <a href="https://t.me/klfh_bot" target="_blank" rel="noopener noreferrer" className="telegram-button">
-                Telegram ile Giriş Yap
-              </a>
-            </div>
+            <>
+              <p>Giriş yapmak için Telegram botunuza gidip /start komutunu gönderin.</p>
+              <p>Bot size özel bir link gönderecektir.</p>
+            </>
+          )}
+          {state.lastStartCommand && (
+            <p className="last-command-info">
+              Son /start komutu: {new Date(state.lastStartCommand).toLocaleString('tr-TR')}
+            </p>
           )}
         </div>
-      ) : state.showChat ? (
-        <div className="chat-container">
-          <div className="chat-sidebar">
-            <div className="user-info">
-              <h3>Hoş geldin, {state.username}!</h3>
-              <button onClick={handleLogout} className="logout-button">Çıkış Yap</button>
-            </div>
-            
-            <div className="rooms-section">
-              <h4>Odalar</h4>
-              <button onClick={() => updateState({ showNewRoomModal: true })} className="new-room-button">
-                Yeni Oda Oluştur
-              </button>
-              <ul className="room-list">
-                {state.rooms.map(room => (
-                  <li key={room}>
-                    <button
-                      onClick={() => changeRoom(room)}
-                      className={state.room === room ? "active-room" : ""}
-                    >
-                      {room}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
+      </div>
+    );
+  }
 
-            <div className="users-section">
-              <h4>Çevrimiçi Kullanıcılar</h4>
-              <ul className="user-list">
-                {state.users.map(user => (
-                  <li key={user.id}>
-                    <button
-                      onClick={() => startPrivateChat(user)}
-                      className={state.selectedPrivateUser?.id === user.id ? "active-user" : ""}
-                    >
-                      {user.username}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          <div className="chat-main">
-            {state.showPrivateChat ? (
-              <div className="private-chat">
-                <div className="private-chat-header">
-                  <h3>{state.selectedPrivateUser?.username} ile özel sohbet</h3>
-                  <button onClick={closePrivateChat} className="close-button">✕</button>
-                </div>
-                <div className="private-messages">
-                  {(state.privateMessages[state.selectedPrivateUser?.id] || []).map((msg, index) => (
-                    <div key={index} className={`message ${msg.from === state.user?.id ? "sent" : "received"}`}>
-                      <div className="message-content">{msg.text}</div>
-                      <div className="message-time">{new Date(msg.time).toLocaleTimeString()}</div>
-                    </div>
-                  ))}
-                  <div ref={privateMessagesEndRef} />
-                </div>
-                <form onSubmit={sendPrivateMessage} className="message-form">
-                  <input
-                    type="text"
-                    value={state.privateMessageInput}
-                    onChange={(e) => updateState({ privateMessageInput: e.target.value })}
-                    placeholder="Mesajınızı yazın..."
-                  />
-                  <button type="submit">Gönder</button>
-                </form>
-              </div>
-            ) : (
-              <>
-                <div className="chat-header">
-                  <h2>{state.room} Odası</h2>
-                </div>
-                <div className="messages">
-                  {state.messages.map((msg, index) => (
-                    <div key={index} className={`message ${msg.user === state.username ? "sent" : "received"}`}>
-                      <div className="message-header">
-                        <span className="message-user">{msg.user}</span>
-                        <span className="message-time">{new Date(msg.time).toLocaleTimeString()}</span>
-                      </div>
-                      <div className="message-content">{msg.text}</div>
-                    </div>
-                  ))}
-                  <div ref={messagesEndRef} />
-                </div>
-                <form onSubmit={sendMessage} className="message-form">
-                  <input
-                    type="text"
-                    value={state.message}
-                    onChange={(e) => updateState({ message: e.target.value })}
-                    placeholder="Mesajınızı yazın..."
-                  />
-                  <button type="submit">Gönder</button>
-                </form>
-              </>
-            )}
-          </div>
+  return (
+    <div className="chat-container">
+      <div className="chat-sidebar">
+        <div className="user-info">
+          <h3>{state.username}</h3>
+          <button className="logout-button" onClick={() => window.location.reload()}>
+            Çıkış Yap
+          </button>
         </div>
-      ) : null}
+
+        <div className="rooms-section">
+          <h4>Sohbet Odaları</h4>
+          <button className="new-room-button" onClick={() => setState(prev => ({ ...prev, showNewRoomModal: true }))}>
+            Yeni Oda Oluştur
+          </button>
+          <ul className="room-list">
+            {state.rooms.map(room => (
+              <li key={room}>
+                <button
+                  className={state.currentRoom === room ? 'active-room' : ''}
+                  onClick={() => handleRoomChange(room)}
+                >
+                  {room}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="users-section">
+          <h4>Çevrimiçi Kullanıcılar</h4>
+          <ul className="user-list">
+            {state.users.map(user => (
+              <li key={user.username}>
+                <button onClick={() => handleStartPrivateChat(user.username)}>
+                  {user.username}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <div className="chat-main">
+        {state.showPrivateChat ? (
+          <div className="private-chat">
+            <div className="private-chat-header">
+              <h3>{state.selectedPrivateUser}</h3>
+              <button className="close-button" onClick={handleClosePrivateChat}>×</button>
+            </div>
+            <div className="private-messages">
+              {state.privateMessages[state.selectedPrivateUser]?.map((message, index) => (
+                <div
+                  key={index}
+                  className={`message ${message.isOwn ? 'sent' : 'received'}`}
+                >
+                  <div className="message-header">
+                    <span className="message-user">{message.from}</span>
+                    <span className="message-time">{formatTime(message.timestamp)}</span>
+                  </div>
+                  <div className="message-content">{message.content}</div>
+                </div>
+              ))}
+              <div ref={privateMessagesEndRef} />
+            </div>
+            <form className="message-form" onSubmit={handleSendPrivateMessage}>
+              <input
+                type="text"
+                value={state.privateMessageInput}
+                onChange={(e) => setState(prev => ({ ...prev, privateMessageInput: e.target.value }))}
+                placeholder="Özel mesajınızı yazın..."
+              />
+              <button type="submit">Gönder</button>
+            </form>
+          </div>
+        ) : (
+          <>
+            <div className="chat-header">
+              <h2>{state.currentRoom}</h2>
+            </div>
+            <div className="messages">
+              {state.messages.map((message, index) => (
+                <div
+                  key={index}
+                  className={`message ${message.isOwn ? 'sent' : 'received'}`}
+                >
+                  <div className="message-header">
+                    <span className="message-user">{message.username}</span>
+                    <span className="message-time">{formatTime(message.timestamp)}</span>
+                  </div>
+                  <div className="message-content">{message.content}</div>
+                </div>
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+            <form className="message-form" onSubmit={handleSendMessage}>
+              <input
+                type="text"
+                value={state.messageInput}
+                onChange={(e) => setState(prev => ({ ...prev, messageInput: e.target.value }))}
+                placeholder="Mesajınızı yazın..."
+              />
+              <button type="submit">Gönder</button>
+            </form>
+          </>
+        )}
+      </div>
 
       {state.showNewRoomModal && (
         <div className="modal-overlay">
@@ -390,12 +429,14 @@ function App() {
             <input
               type="text"
               value={state.newRoomName}
-              onChange={(e) => updateState({ newRoomName: e.target.value })}
+              onChange={(e) => setState(prev => ({ ...prev, newRoomName: e.target.value }))}
               placeholder="Oda adı"
             />
             <div className="modal-buttons">
-              <button onClick={createNewRoom}>Oluştur</button>
-              <button onClick={closeModal}>İptal</button>
+              <button onClick={handleCreateRoom}>Oluştur</button>
+              <button onClick={() => setState(prev => ({ ...prev, showNewRoomModal: false }))}>
+                İptal
+              </button>
             </div>
           </div>
         </div>

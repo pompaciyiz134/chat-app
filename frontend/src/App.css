@@ -5,10 +5,22 @@
   box-sizing: border-box;
 }
 
+:root {
+  --tg-theme-bg-color: #17212b;
+  --tg-theme-text-color: #ffffff;
+  --tg-theme-hint-color: #7d8b99;
+  --tg-theme-link-color: #64baf0;
+  --tg-theme-button-color: #2b5278;
+  --tg-theme-button-text-color: #ffffff;
+  --tg-theme-secondary-bg-color: #242f3d;
+  --tg-theme-accent-color: #2b5278;
+  --tg-theme-error-color: #ff3b30;
+}
+
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: #f0f2f5;
-  color: #1a1a1a;
+  background: var(--tg-theme-bg-color);
+  color: var(--tg-theme-text-color);
 }
 
 .app-container {
@@ -24,14 +36,14 @@ body {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: #ffffff;
+  background: var(--tg-theme-bg-color);
 }
 
 .loading-spinner {
   width: 50px;
   height: 50px;
-  border: 5px solid #f3f3f3;
-  border-top: 5px solid #3498db;
+  border: 5px solid var(--tg-theme-secondary-bg-color);
+  border-top: 5px solid var(--tg-theme-link-color);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 20px;
@@ -51,27 +63,27 @@ body {
   min-height: 100vh;
   padding: 20px;
   text-align: center;
-  background: #ffffff;
+  background: var(--tg-theme-bg-color);
 }
 
 .error-screen h2 {
-  color: #e74c3c;
+  color: var(--tg-theme-error-color);
   margin-bottom: 15px;
 }
 
 .error-screen button {
   margin-top: 20px;
   padding: 10px 20px;
-  background: #3498db;
-  color: white;
+  background: var(--tg-theme-button-color);
+  color: var(--tg-theme-button-text-color);
   border: none;
-  border-radius: 5px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: opacity 0.3s;
 }
 
 .error-screen button:hover {
-  background: #2980b9;
+  opacity: 0.9;
 }
 
 /* Giriş Ekranı */
@@ -82,32 +94,30 @@ body {
   justify-content: center;
   min-height: 100vh;
   padding: 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: var(--tg-theme-bg-color);
 }
 
 .login-content {
   text-align: center;
   max-width: 400px;
   padding: 40px;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
+  background: var(--tg-theme-secondary-bg-color);
   border-radius: 15px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
 
 .login-content h1 {
   font-size: 2.5em;
   margin-bottom: 20px;
-  color: white;
+  color: var(--tg-theme-text-color);
 }
 
 .telegram-button {
   display: inline-block;
   margin-top: 20px;
   padding: 12px 24px;
-  background: #0088cc;
-  color: white;
+  background: var(--tg-theme-button-color);
+  color: var(--tg-theme-button-text-color);
   text-decoration: none;
   border-radius: 8px;
   font-weight: 600;
@@ -116,20 +126,20 @@ body {
 
 .telegram-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
 }
 
 /* Sohbet Arayüzü */
 .chat-container {
   display: flex;
   height: 100vh;
-  background: #ffffff;
+  background: var(--tg-theme-bg-color);
 }
 
 .chat-sidebar {
   width: 280px;
-  background: #ffffff;
-  border-right: 1px solid #e1e4e8;
+  background: var(--tg-theme-secondary-bg-color);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   flex-direction: column;
   padding: 20px;
@@ -137,27 +147,27 @@ body {
 
 .user-info {
   padding-bottom: 20px;
-  border-bottom: 1px solid #e1e4e8;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   margin-bottom: 20px;
 }
 
 .user-info h3 {
-  color: #1a1a1a;
+  color: var(--tg-theme-text-color);
   margin-bottom: 10px;
 }
 
 .logout-button {
   padding: 8px 16px;
-  background: #e74c3c;
-  color: white;
+  background: var(--tg-theme-error-color);
+  color: var(--tg-theme-button-text-color);
   border: none;
-  border-radius: 5px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: opacity 0.3s;
 }
 
 .logout-button:hover {
-  background: #c0392b;
+  opacity: 0.9;
 }
 
 .rooms-section, .users-section {
@@ -165,7 +175,7 @@ body {
 }
 
 .rooms-section h4, .users-section h4 {
-  color: #1a1a1a;
+  color: var(--tg-theme-text-color);
   margin-bottom: 10px;
   font-size: 1.1em;
 }
@@ -184,54 +194,54 @@ body {
   text-align: left;
   background: transparent;
   border: none;
-  border-radius: 5px;
+  border-radius: 8px;
   cursor: pointer;
   transition: background 0.3s;
-  color: #1a1a1a;
+  color: var(--tg-theme-text-color);
 }
 
 .room-list button:hover, .user-list button:hover {
-  background: #f0f2f5;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .active-room, .active-user {
-  background: #e3f2fd !important;
-  color: #1976d2 !important;
+  background: var(--tg-theme-accent-color) !important;
+  color: var(--tg-theme-button-text-color) !important;
   font-weight: 600;
 }
 
 .new-room-button {
   width: 100%;
   padding: 10px;
-  background: #3498db;
-  color: white;
+  background: var(--tg-theme-button-color);
+  color: var(--tg-theme-button-text-color);
   border: none;
-  border-radius: 5px;
+  border-radius: 8px;
   cursor: pointer;
   margin-bottom: 15px;
-  transition: background 0.3s;
+  transition: opacity 0.3s;
 }
 
 .new-room-button:hover {
-  background: #2980b9;
+  opacity: 0.9;
 }
 
 .chat-main {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #f8f9fa;
+  background: var(--tg-theme-bg-color);
 }
 
 .chat-header {
   padding: 20px;
-  background: #ffffff;
-  border-bottom: 1px solid #e1e4e8;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  background: var(--tg-theme-secondary-bg-color);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .chat-header h2 {
-  color: #1a1a1a;
+  color: var(--tg-theme-text-color);
   font-size: 1.5em;
 }
 
@@ -259,15 +269,15 @@ body {
 
 .message.sent {
   align-self: flex-end;
-  background: #0084ff;
-  color: white;
+  background: var(--tg-theme-accent-color);
+  color: var(--tg-theme-button-text-color);
   border-bottom-right-radius: 4px;
 }
 
 .message.received {
   align-self: flex-start;
-  background: #e9ecef;
-  color: #1a1a1a;
+  background: var(--tg-theme-secondary-bg-color);
+  color: var(--tg-theme-text-color);
   border-bottom-left-radius: 4px;
 }
 
@@ -296,36 +306,42 @@ body {
   display: flex;
   gap: 10px;
   padding: 20px;
-  background: #ffffff;
-  border-top: 1px solid #e1e4e8;
+  background: var(--tg-theme-secondary-bg-color);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .message-form input {
   flex: 1;
   padding: 12px;
-  border: 1px solid #e1e4e8;
+  background: var(--tg-theme-bg-color);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
+  color: var(--tg-theme-text-color);
   font-size: 1em;
   transition: border-color 0.3s;
 }
 
 .message-form input:focus {
   outline: none;
-  border-color: #3498db;
+  border-color: var(--tg-theme-link-color);
+}
+
+.message-form input::placeholder {
+  color: var(--tg-theme-hint-color);
 }
 
 .message-form button {
   padding: 12px 24px;
-  background: #3498db;
-  color: white;
+  background: var(--tg-theme-button-color);
+  color: var(--tg-theme-button-text-color);
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: opacity 0.3s;
 }
 
 .message-form button:hover {
-  background: #2980b9;
+  opacity: 0.9;
 }
 
 /* Özel Sohbet */
@@ -340,12 +356,12 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 20px;
-  background: #ffffff;
-  border-bottom: 1px solid #e1e4e8;
+  background: var(--tg-theme-secondary-bg-color);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .private-chat-header h3 {
-  color: #1a1a1a;
+  color: var(--tg-theme-text-color);
 }
 
 .close-button {
@@ -353,12 +369,12 @@ body {
   border: none;
   font-size: 1.5em;
   cursor: pointer;
-  color: #666;
+  color: var(--tg-theme-hint-color);
   transition: color 0.3s;
 }
 
 .close-button:hover {
-  color: #e74c3c;
+  color: var(--tg-theme-error-color);
 }
 
 .private-messages {
@@ -377,7 +393,7 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -385,31 +401,37 @@ body {
 }
 
 .modal {
-  background: #ffffff;
+  background: var(--tg-theme-secondary-bg-color);
   padding: 30px;
   border-radius: 12px;
   width: 90%;
   max-width: 400px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
 .modal h3 {
   margin-bottom: 20px;
-  color: #1a1a1a;
+  color: var(--tg-theme-text-color);
 }
 
 .modal input {
   width: 100%;
   padding: 12px;
-  border: 1px solid #e1e4e8;
+  background: var(--tg-theme-bg-color);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   margin-bottom: 20px;
+  color: var(--tg-theme-text-color);
   font-size: 1em;
 }
 
 .modal input:focus {
   outline: none;
-  border-color: #3498db;
+  border-color: var(--tg-theme-link-color);
+}
+
+.modal input::placeholder {
+  color: var(--tg-theme-hint-color);
 }
 
 .modal-buttons {
@@ -421,19 +443,19 @@ body {
 .modal-buttons button {
   padding: 10px 20px;
   border: none;
-  border-radius: 5px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: opacity 0.3s;
 }
 
 .modal-buttons button:first-child {
-  background: #3498db;
-  color: white;
+  background: var(--tg-theme-button-color);
+  color: var(--tg-theme-button-text-color);
 }
 
 .modal-buttons button:last-child {
-  background: #e1e4e8;
-  color: #1a1a1a;
+  background: var(--tg-theme-secondary-bg-color);
+  color: var(--tg-theme-text-color);
 }
 
 .modal-buttons button:hover {
@@ -450,7 +472,7 @@ body {
     width: 100%;
     height: auto;
     border-right: none;
-    border-bottom: 1px solid #e1e4e8;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   .message {
@@ -469,14 +491,14 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: var(--tg-theme-bg-color);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
+  background: var(--tg-theme-secondary-bg-color);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
+  background: var(--tg-theme-accent-color);
 } 

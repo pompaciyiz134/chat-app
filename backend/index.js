@@ -20,8 +20,9 @@ const userSchema = new mongoose.Schema({
   telegramId: String,
   username: String,
   displayName: String,
-  isAdmin: Boolean,
-  verificationCode: String,
+  isAdmin: { type: Boolean, default: false },
+  lastStartCommand: { type: Date, default: null },
+  isVerified: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -81,7 +82,7 @@ const deepLinkTokens = new Map();
 // Deep link token oluştur
 const generateDeepLinkToken = () => {
   const token = uuidv4();
-  const expiresAt = Date.now() + 5 * 60 * 1000; // 5 dakika geçerli
+  const expiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 saat geçerli
   return { token, expiresAt };
 };
 
@@ -251,6 +252,10 @@ app.get("/api/telegram/deep-link", async (req, res) => {
       });
     }
 
+    // Kullanıcıyı doğrula ve güncelle
+    user.isVerified = true;
+    await user.save();
+
     // Token'ı kullanıldıktan sonra sil
     deepLinkTokens.delete(token);
 
@@ -263,7 +268,7 @@ app.get("/api/telegram/deep-link", async (req, res) => {
         id: user._id,
         username: user.username,
         displayName: user.displayName || user.username,
-        isAdmin: user.isAdmin || false
+        isAdmin: user.isAdmin
       }
     });
   } catch (error) {
@@ -285,20 +290,50 @@ app.post("/telegram/webhook", express.json(), async (req, res) => {
       const chatId = update.message.chat.id;
       const text = update.message.text;
       const username = update.message.from.username || update.message.from.first_name;
+      const userId = update.message.from.id.toString();
 
       // /start komutu için deep link token oluştur
       if (text === "/start") {
+        // Kullanıcıyı veritabanında ara
+        let user = await User.findOne({ telegramId: userId });
+        
+        if (user) {
+          // Son /start komutundan bu yana 24 saat geçti mi kontrol et
+          const lastStart = user.lastStartCommand || new Date(0);
+          const hoursSinceLastStart = (Date.now() - lastStart.getTime()) / (1000 * 60 * 60);
+          
+          if (hoursSinceLastStart < 24) {
+            const remainingHours = Math.ceil(24 - hoursSinceLastStart);
+            await bot.sendMessage(chatId, 
+              `Üzgünüm, yeni bir giriş linki almak için ${remainingHours} saat beklemelisiniz.`
+            );
+            return res.sendStatus(200);
+          }
+        } else {
+          // Yeni kullanıcı oluştur
+          user = new User({
+            telegramId: userId,
+            username: username,
+            displayName: username,
+            isVerified: false
+          });
+        }
+
+        // Token oluştur ve kullanıcıyı güncelle
         const { token, expiresAt } = generateDeepLinkToken();
         deepLinkTokens.set(token, {
-          telegramId: update.message.from.id.toString(),
+          telegramId: userId,
           expiresAt
         });
+
+        user.lastStartCommand = new Date();
+        await user.save();
 
         const deepLinkUrl = `${FRONTEND_URL}?token=${token}`;
         await bot.sendMessage(chatId, 
           `Merhaba ${username}! Sohbet uygulamasına hoş geldiniz.\n\n` +
           `Giriş yapmak için aşağıdaki linke tıklayın:\n${deepLinkUrl}\n\n` +
-          `Bu link 5 dakika süreyle geçerlidir.`
+          `Bu link 24 saat süreyle geçerlidir.`
         );
       }
     }
@@ -311,151 +346,67 @@ app.post("/telegram/webhook", express.json(), async (req, res) => {
 });
 
 // Socket.IO bağlantı yönetimi
-io.on("connection", async (socket) => {
-  let currentUser = null;
+io.on("connection", (socket) => {
+  console.log("Yeni socket bağlantısı:", socket.id);
 
   socket.on("authenticate", async ({ userId }) => {
     try {
       const user = await User.findById(userId);
       if (user) {
-        currentUser = user;
-        socket.data.user = user;
-        socket.emit("authenticated", {
-          id: user._id,
-          username: user.username,
-          displayName: user.displayName,
-          isAdmin: user.isAdmin
-        });
+        socket.userId = userId;
+        socket.username = user.username;
+        socket.isAdmin = user.isAdmin;
+        
+        // Kullanıcıyı genel odaya ekle
+        socket.join("genel");
+        
+        // Kullanıcı listesini güncelle
+        const users = await User.find({ isVerified: true });
+        io.emit("userList", users.map(u => ({
+          id: u._id,
+          username: u.username,
+          displayName: u.displayName || u.username,
+          isAdmin: u.isAdmin
+        })));
       }
     } catch (error) {
-      socket.emit("error", "Kimlik doğrulama hatası");
+      console.error("Socket kimlik doğrulama hatası:", error);
     }
   });
 
   socket.on("join", async ({ room }) => {
-    if (!currentUser) return;
-
-    try {
-      let roomDoc = await Room.findOne({ name: room });
-      
-      if (!roomDoc) {
-        if (!currentUser.isAdmin) {
-          socket.emit("error", "Sadece adminler yeni oda oluşturabilir");
-          return;
-        }
-        roomDoc = await Room.create({
-          name: room,
-          createdBy: currentUser._id
-        });
+    if (socket.userId) {
+      // Kullanıcının admin olup olmadığını kontrol et
+      const user = await User.findById(socket.userId);
+      if (!user.isAdmin && room !== "genel") {
+        socket.emit("error", { message: "Sadece adminler yeni oda oluşturabilir" });
+        return;
       }
 
       socket.join(room);
-      socket.data.room = room;
-
-      const messages = await Message.find({ room: roomDoc._id })
-        .populate("sender", "displayName")
-        .populate("replyTo")
-        .sort({ createdAt: -1 })
-        .limit(50);
-
-      socket.emit("roomHistory", messages.reverse());
-
-      io.to(room).emit("message", {
-        name: "Sistem",
-        text: `${currentUser.displayName} ${currentUser.isAdmin ? "(Admin) " : ""}odaya katıldı.`
-      });
-    } catch (error) {
-      socket.emit("error", "Oda katılım hatası");
+      socket.emit("roomJoined", room);
     }
   });
 
-  socket.on("message", async ({ room, text, replyTo }) => {
-    if (!currentUser) return;
-
-    try {
-      const roomDoc = await Room.findOne({ name: room });
-      if (!roomDoc) return;
-
-      const message = await Message.create({
-        room: roomDoc._id,
-        sender: currentUser._id,
-        text,
-        replyTo
-      });
-
-      const populatedMessage = await Message.findById(message._id)
-        .populate("sender", "displayName")
-        .populate("replyTo");
-
-      io.to(room).emit("message", {
-        id: message._id,
-        name: currentUser.displayName,
-        text,
-        replyTo: populatedMessage.replyTo,
-        isAdmin: currentUser.isAdmin,
-        timestamp: message.createdAt
-      });
-
-      // Telegram kullanıcılarına bildirim
-      const telegramChats = roomTelegramChats.get(room) || new Set();
-      telegramChats.forEach(chatId => {
-        bot.sendMessage(chatId, 
-          `${currentUser.displayName}${currentUser.isAdmin ? " (Admin)" : ""}: ${text}`
-        );
-      });
-    } catch (error) {
-      socket.emit("error", "Mesaj gönderme hatası");
-    }
-  });
-
-  socket.on("privateMessage", async ({ to, text }) => {
-    if (!currentUser) return;
-
-    try {
-      const recipient = await User.findById(to);
-      if (!recipient) return;
-
-      const message = {
-        from: currentUser._id,
-        to: recipient._id,
-        text,
-        timestamp: new Date()
-      };
-
-      // Alıcının socket'ini bul ve mesajı gönder
-      const recipientSocket = Array.from(io.sockets.sockets.values())
-        .find(s => s.data.user?._id.toString() === to);
-
-      if (recipientSocket) {
-        recipientSocket.emit("privateMessage", {
-          from: {
-            id: currentUser._id,
-            displayName: currentUser.displayName
-          },
-          text,
-          timestamp: message.timestamp
-        });
+  socket.on("message", async (message) => {
+    if (socket.userId) {
+      const user = await User.findById(socket.userId);
+      if (user) {
+        const messageData = {
+          ...message,
+          userId: socket.userId,
+          username: user.username,
+          time: new Date().toISOString()
+        };
+        io.to(message.room).emit("message", messageData);
       }
-
-      socket.emit("privateMessage", {
-        to: {
-          id: recipient._id,
-          displayName: recipient.displayName
-        },
-        text,
-        timestamp: message.timestamp
-      });
-    } catch (error) {
-      socket.emit("error", "Özel mesaj gönderme hatası");
     }
   });
 
-  socket.on("disconnecting", () => {
-    if (currentUser && socket.data.room) {
-      io.to(socket.data.room).emit("message", {
-        name: "Sistem",
-        text: `${currentUser.displayName} odadan ayrıldı.`
-      });
+  socket.on("disconnect", () => {
+    if (socket.userId) {
+      // Kullanıcı listesini güncelle
+      io.emit("userLeft", socket.userId);
     }
   });
 }); 

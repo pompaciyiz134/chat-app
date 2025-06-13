@@ -79,64 +79,59 @@ function App() {
 
   const verifyToken = async (token) => {
     try {
-      const linkData = await fetch(`${SOCKET_URL}/api/verify-link-password`, {
+      console.log("Token doğrulama başladı:", token);
+      setState(prev => ({ ...prev, isLoading: true, error: null }));
+
+      // Token ve şifre doğrulama
+      const response = await fetch(`${API_URL}/api/verify-token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ token, password: state.password }),
-      }).then(res => res.json());
+        body: JSON.stringify({
+          token: token,
+          password: state.password
+        })
+      });
 
-      if (!linkData.success) {
-        if (linkData.message.includes('kilitlendi')) {
+      console.log("Token doğrulama yanıtı:", response.status);
+      const data = await response.json();
+      console.log("Token doğrulama verisi:", data);
+
+      if (!response.ok) {
+        if (response.status === 403 && data.isLocked) {
           setState(prev => ({
             ...prev,
-            isLoading: false,
-            showLogin: true,
+            error: `Hesabınız kilitlendi. ${new Date(data.lockExpires).toLocaleTimeString()} tarihine kadar bekleyin.`,
             isLocked: true,
-            lockExpires: new Date(Date.now() + 15 * 60 * 1000),
-            verificationError: linkData.message
+            lockExpires: data.lockExpires
           }));
-        } else if (linkData.message.includes('Geçersiz link')) {
+        } else if (response.status === 401) {
           setState(prev => ({
             ...prev,
-            isLoading: false,
-            showLogin: true,
-            showPasswordModal: true,
-            password: '',
-            confirmPassword: ''
+            error: `Yanlış şifre. Kalan deneme hakkı: ${data.remainingAttempts}`,
+            remainingAttempts: data.remainingAttempts
           }));
         } else {
           setState(prev => ({
             ...prev,
-            isLoading: false,
-            showLogin: true,
-            remainingAttempts: linkData.remainingAttempts,
-            verificationError: linkData.message
+            error: data.error || 'Token doğrulanamadı'
           }));
         }
         return;
       }
 
-      setState(prev => ({
-        ...prev,
-        isVerified: true,
-        username: linkData.username,
-        isLoading: false,
-        showLogin: false,
-        showChat: true,
-        lastStartCommand: linkData.lastStartCommand,
-        showPasswordModal: false,
-        password: '',
-        confirmPassword: ''
-      }));
+      // Token geçerliyse socket bağlantısını başlat
+      console.log("Token geçerli, socket bağlantısı başlatılıyor");
+      initializeSocket(token);
     } catch (error) {
+      console.error("Token doğrulama hatası:", error);
       setState(prev => ({
         ...prev,
-        isLoading: false,
-        showLogin: true,
-        verificationError: 'Sunucu hatası'
+        error: 'Sunucu hatası. Lütfen daha sonra tekrar deneyin.'
       }));
+    } finally {
+      setState(prev => ({ ...prev, isLoading: false }));
     }
   };
 

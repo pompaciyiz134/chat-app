@@ -294,91 +294,72 @@ app.get("/api/telegram/deep-link", async (req, res) => {
   }
 });
 
-// Şifre kontrolü için endpoint
-app.post('/api/verify-link-password', async (req, res) => {
+// Token doğrulama endpoint'i
+app.post("/api/verify-token", async (req, res) => {
   try {
     const { token, password } = req.body;
-    
+    console.log("Token doğrulama isteği:", { token, password });
+
     // Token'ı kontrol et
-    const linkData = await LinkPassword.findOne({ token });
-    if (!linkData) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Geçersiz link' 
-      });
+    const linkPassword = await LinkPassword.findOne({ token });
+    console.log("Link şifre kaydı:", linkPassword);
+
+    if (!linkPassword) {
+      console.log("Token bulunamadı");
+      return res.status(404).json({ error: "Geçersiz token" });
     }
 
-    // Hesap kilitli mi kontrol et
-    if (linkData.isLocked) {
-      const lockTime = new Date(linkData.lockExpires);
-      if (lockTime > new Date()) {
-        const remainingMinutes = Math.ceil((lockTime - new Date()) / (1000 * 60));
+    // Kilit durumunu kontrol et
+    if (linkPassword.isLocked) {
+      const lockTime = new Date(linkPassword.lockExpiresAt);
+      const now = new Date();
+      if (now < lockTime) {
+        console.log("Hesap kilitli, kalan süre:", lockTime - now);
         return res.status(403).json({
-          success: false,
-          message: `Spam nedeniyle hesabınız kilitlendi. ${remainingMinutes} dakika sonra tekrar deneyin.`
+          error: "Çok fazla başarısız deneme. Hesabınız kilitlendi.",
+          isLocked: true,
+          lockExpires: lockTime
         });
       } else {
-        // Kilit süresi dolmuşsa sıfırla
-        linkData.isLocked = false;
-        linkData.attempts = 0;
+        // Kilit süresi dolmuşsa kilidi kaldır
+        linkPassword.isLocked = false;
+        linkPassword.attempts = 0;
+        await linkPassword.save();
+        console.log("Kilit süresi doldu, kilit kaldırıldı");
       }
     }
 
     // Şifre kontrolü
-    if (linkData.password === password) {
-      // Başarılı giriş - deneme sayısını sıfırla
-      linkData.attempts = 0;
-      await linkData.save();
+    if (linkPassword.password !== password) {
+      linkPassword.attempts += 1;
+      console.log("Yanlış şifre, deneme sayısı:", linkPassword.attempts);
 
-      // Token doğrulama işlemine devam et
-      const tokenData = await Token.findOne({ token });
-      if (!tokenData) {
-        return res.status(404).json({ 
-          success: false, 
-          message: 'Geçersiz veya süresi dolmuş token' 
+      // 5 yanlış denemeden sonra kilitle
+      if (linkPassword.attempts >= 5) {
+        linkPassword.isLocked = true;
+        linkPassword.lockExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 dakika
+        await linkPassword.save();
+        console.log("5 yanlış deneme, hesap kilitlendi");
+        return res.status(403).json({
+          error: "Çok fazla başarısız deneme. Hesabınız 15 dakika kilitlendi.",
+          isLocked: true,
+          lockExpires: linkPassword.lockExpiresAt
         });
       }
 
-      const user = await User.findById(tokenData.userId);
-      if (!user) {
-        return res.status(404).json({ 
-          success: false, 
-          message: 'Kullanıcı bulunamadı' 
-        });
-      }
-
-      return res.json({
-        success: true,
-        username: user.username,
-        lastStartCommand: user.lastStartCommand
-      });
-    } else {
-      // Yanlış şifre - deneme sayısını artır
-      linkData.attempts += 1;
-      linkData.lastAttempt = new Date();
-
-      // 5 deneme sonrası kilitleme
-      if (linkData.attempts >= 5) {
-        linkData.isLocked = true;
-        linkData.lockExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 dakika
-      }
-
-      await linkData.save();
-
-      const remainingAttempts = 5 - linkData.attempts;
+      await linkPassword.save();
       return res.status(401).json({
-        success: false,
-        message: remainingAttempts > 0 
-          ? `Yanlış şifre. Kalan deneme hakkı: ${remainingAttempts}`
-          : 'Spam nedeniyle hesabınız 15 dakika kilitlendi.'
+        error: "Yanlış şifre",
+        remainingAttempts: 5 - linkPassword.attempts
       });
     }
+
+    // Şifre doğruysa
+    console.log("Şifre doğru, token geçerli");
+    res.json({ valid: true });
   } catch (error) {
-    console.error('Şifre doğrulama hatası:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Sunucu hatası' 
-    });
+    console.error("Token doğrulama hatası:", error);
+    res.status(500).json({ error: "Sunucu hatası" });
   }
 });
 

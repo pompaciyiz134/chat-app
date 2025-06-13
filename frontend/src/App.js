@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   ChakraProvider,
   Box,
@@ -129,34 +129,38 @@ const TelegramLoginWidget = () => {
 };
 
 function App() {
-  const [socket, setSocket] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [message, setMessage] = useState("");
-  const [room, setRoom] = useState("genel");
-  const [user, setUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [connectionError, setConnectionError] = useState(null);
-  const [verificationCode, setVerificationCode] = useState("");
-  const [rooms, setRooms] = useState([]);
-  const [selectedRoom, setSelectedRoom] = useState(null);
-  const [replyTo, setReplyTo] = useState(null);
-  const [privateMessages, setPrivateMessages] = useState({});
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [users, setUsers] = useState([]);
-  const [username, setUsername] = useState("");
-  const [showLogin, setShowLogin] = useState(true);
-  const [showChat, setShowChat] = useState(false);
+  // URL parametreleri
   const [searchParams] = useSearchParams();
-  const [verificationError, setVerificationError] = useState("");
+
+  // State tanımlamaları
+  const [state, setState] = useState({
+    username: "",
+    message: "",
+    messages: [],
+    room: "genel",
+    showLogin: true,
+    showChat: false,
+    users: [],
+    isLoading: true,
+    connectionError: false,
+    verificationError: ""
+  });
+
+  // State güncelleme fonksiyonu
+  const updateState = useCallback((updates) => {
+    setState(prev => ({ ...prev, ...updates }));
+  }, []);
+
+  // Refs
+  const messagesEndRef = useRef(null);
+  const socketRef = useRef();
 
   const { isOpen, onOpen, onClose } = useDisclosure();
   const { colorMode, toggleColorMode } = useColorMode();
   const toast = useToast();
-  const messagesEndRef = useRef(null);
   const telegramModal = useDisclosure();
   const newRoomModal = useDisclosure();
   const [newRoomName, setNewRoomName] = useState("");
-  const socketRef = useRef();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -168,20 +172,18 @@ function App() {
       try {
         const response = await fetch(`${SERVER_URL}/`);
         if (response.ok) {
-          setIsLoading(false);
-          setConnectionError(false);
+          updateState({ isLoading: false, connectionError: false });
         } else {
           throw new Error("Backend bağlantısı başarısız");
         }
       } catch (error) {
         console.error("Backend bağlantı hatası:", error);
-        setIsLoading(false);
-        setConnectionError(true);
+        updateState({ isLoading: false, connectionError: true });
       }
     };
 
     checkBackendConnection();
-  }, []);
+  }, [updateState]);
 
   // Deep link token kontrolü
   useEffect(() => {
@@ -200,17 +202,19 @@ function App() {
 
       if (data.success) {
         console.log("Deep link doğrulama başarılı:", data);
-        setUsername(data.username);
-        setShowLogin(false);
-        setShowChat(true);
+        updateState({
+          username: data.username,
+          showLogin: false,
+          showChat: true
+        });
         initializeSocket(data.userId);
       } else {
         console.error("Deep link doğrulama hatası:", data.message);
-        setVerificationError(data.message);
+        updateState({ verificationError: data.message });
       }
     } catch (error) {
       console.error("Deep link doğrulama hatası:", error);
-      setVerificationError("Doğrulama sırasında bir hata oluştu");
+      updateState({ verificationError: "Doğrulama sırasında bir hata oluştu" });
     }
   };
 
@@ -230,29 +234,32 @@ function App() {
 
     socket.on("connect_error", (error) => {
       console.error("Socket.IO bağlantı hatası:", error);
-      setConnectionError("Sunucuya bağlanılamadı. Lütfen daha sonra tekrar deneyin.");
-      setIsLoading(false);
+      updateState({ connectionError: true });
     });
 
     socket.on("message", (msg) => {
-      setMessages(prev => [...prev, msg]);
+      updateState(prev => ({
+        messages: [...prev.messages, msg]
+      }));
       scrollToBottom();
     });
 
     socket.on("roomHistory", (history) => {
-      setMessages(history);
+      updateState({ messages: history });
       scrollToBottom();
     });
 
     socket.on("privateMessage", (msg) => {
-      setPrivateMessages(prev => ({
-        ...prev,
-        [msg.from.id]: [...(prev[msg.from.id] || []), msg]
+      updateState(prev => ({
+        privateMessages: {
+          ...prev.privateMessages,
+          [msg.from.id]: [...(prev.privateMessages[msg.from.id] || []), msg]
+        }
       }));
     });
 
     socket.on("userList", (userList) => {
-      setUsers(userList);
+      updateState({ users: userList });
     });
 
     socket.on("error", (error) => {
@@ -265,13 +272,12 @@ function App() {
       });
     });
 
-    setSocket(socket);
     socketRef.current = socket;
   };
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [state.messages]);
 
   const handleTelegramLogin = async () => {
     try {
@@ -286,7 +292,7 @@ function App() {
       const data = await response.json();
 
       if (data.success) {
-        setUser(data.user);
+        updateState({ user: data.user });
         socketRef.current.emit("authenticate", { userId: data.user.id });
         telegramModal.onClose();
         toast({
@@ -317,16 +323,15 @@ function App() {
   };
 
   const handleJoinRoom = (roomName) => {
-    if (!user) return;
+    if (!state.user) return;
     
     socketRef.current.emit("join", { room: roomName });
-    setSelectedRoom(roomName);
-    setRoom(roomName);
+    updateState({ room: roomName });
     onClose();
   };
 
   const handleCreateRoom = () => {
-    if (!user?.isAdmin) {
+    if (!state.user?.isAdmin) {
       toast({
         title: "Yetki hatası",
         description: "Sadece adminler yeni oda oluşturabilir",
@@ -338,38 +343,37 @@ function App() {
     }
 
     socketRef.current.emit("join", { room: newRoomName });
-    setSelectedRoom(newRoomName);
-    setRoom(newRoomName);
+    updateState({ room: newRoomName });
     setNewRoomName("");
     newRoomModal.onClose();
   };
 
   const handleSendMessage = (e) => {
     e.preventDefault();
-    if (!message.trim() || !room || !user) return;
+    if (!state.message.trim() || !state.room || !state.user) return;
 
     socketRef.current.emit("message", {
-      room,
-      text: message,
-      replyTo: replyTo?.id
+      room: state.room,
+      text: state.message,
+      replyTo: state.replyTo?.id
     });
 
-    setMessage("");
-    setReplyTo(null);
+    updateState({ message: "" });
+    updateState({ replyTo: null });
   };
 
   const handleSendPrivateMessage = (to, text) => {
-    if (!text.trim() || !user) return;
+    if (!text.trim() || !state.user) return;
 
     socketRef.current.emit("privateMessage", { to, text });
   };
 
   const handleReply = (message) => {
-    setReplyTo(message);
+    updateState({ replyTo: message });
     document.getElementById("messageInput").focus();
   };
 
-  if (isLoading) {
+  if (state.isLoading) {
     return (
       <ChakraProvider theme={theme}>
         <Box
@@ -388,7 +392,7 @@ function App() {
     );
   }
 
-  if (connectionError) {
+  if (state.connectionError) {
     return (
       <ChakraProvider theme={theme}>
         <Box
@@ -399,7 +403,7 @@ function App() {
           bg="gray.900"
         >
           <VStack spacing={4}>
-            <Text color="red.500">{connectionError}</Text>
+            <Text color="red.500">{state.connectionError}</Text>
             <Button onClick={() => window.location.reload()}>
               Yeniden Dene
               </Button>
@@ -409,7 +413,7 @@ function App() {
     );
   }
 
-  if (!user) {
+  if (!state.user) {
     return (
       <ChakraProvider theme={theme}>
         <Box
@@ -447,7 +451,7 @@ function App() {
                 <Text fontSize="lg" fontWeight="bold">
                   Odalar
                 </Text>
-                {user.isAdmin && (
+                {state.user.isAdmin && (
                   <IconButton
                     icon={<FaUser />}
                     size="sm"
@@ -456,10 +460,10 @@ function App() {
                 )}
               </HStack>
               <VStack spacing={2} align="stretch">
-                {rooms.map((r) => (
+                {state.rooms.map((r) => (
                   <Button
                     key={r}
-                    variant={selectedRoom === r ? "solid" : "ghost"}
+                    variant={state.room === r ? "solid" : "ghost"}
                     onClick={() => handleJoinRoom(r)}
                     justifyContent="flex-start"
                   >
@@ -481,7 +485,7 @@ function App() {
               justify="space-between"
             >
               <Text fontSize="lg" fontWeight="bold">
-                {selectedRoom || "Oda Seçin"}
+                {state.room || "Oda Seçin"}
               </Text>
               <HStack>
                 <IconButton
@@ -495,8 +499,8 @@ function App() {
                     leftIcon={<FaUser />}
                     variant="ghost"
                   >
-                    {user.displayName}
-                    {user.isAdmin && (
+                    {state.user.displayName}
+                    {state.user.isAdmin && (
                       <Badge ml={2} colorScheme="red">
                         Admin
                       </Badge>
@@ -505,7 +509,7 @@ function App() {
                   <MenuList bg="gray.800">
                     <MenuItem
                       icon={<FaSignOutAlt />}
-                      onClick={() => setUser(null)}
+                      onClick={() => updateState({ user: null })}
                     >
                       Çıkış Yap
                     </MenuItem>
@@ -533,7 +537,7 @@ function App() {
               }}
             >
               <VStack spacing={4} align="stretch">
-                {messages.map((msg, index) => (
+                {state.messages.map((msg, index) => (
                   <Box
                     key={index}
                     p={3}
@@ -591,7 +595,7 @@ function App() {
             <Box p={4} bg="gray.800" borderTop="1px" borderColor="gray.700">
               <form onSubmit={handleSendMessage}>
                 <VStack spacing={2}>
-                  {replyTo && (
+                  {state.replyTo && (
                     <HStack
                       w="100%"
                       p={2}
@@ -600,21 +604,21 @@ function App() {
                       justify="space-between"
                     >
                       <Text fontSize="sm" color="gray.400">
-                        Yanıtlanıyor: {replyTo.name}
+                        Yanıtlanıyor: {state.replyTo.name}
                       </Text>
                       <IconButton
                         icon={<FaSignOutAlt />}
                         size="sm"
                         variant="ghost"
-                        onClick={() => setReplyTo(null)}
+                        onClick={() => updateState({ replyTo: null })}
                       />
                     </HStack>
                   )}
                   <HStack w="100%">
                     <Input
                       id="messageInput"
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
+                      value={state.message}
+                      onChange={(e) => updateState({ message: e.target.value })}
                       placeholder="Mesajınızı yazın..."
                       bg="gray.700"
                       _hover={{ bg: "gray.600" }}
@@ -623,7 +627,7 @@ function App() {
                     <Button
                       type="submit"
                       colorScheme="blue"
-                      isDisabled={!message.trim()}
+                      isDisabled={!state.message.trim()}
                     >
                       Gönder
                     </Button>
@@ -646,11 +650,11 @@ function App() {
                 Kullanıcılar
               </Text>
               <VStack spacing={2} align="stretch">
-                {users.map((u) => (
+                {state.users.map((u) => (
                   <Button
                     key={u.id}
                     variant="ghost"
-                    onClick={() => setSelectedUser(u)}
+                    onClick={() => updateState({ selectedUser: u })}
                     justifyContent="flex-start"
                   >
                     {u.displayName}
@@ -696,13 +700,13 @@ function App() {
 
         {/* Özel Mesaj Modalı */}
         <Modal
-          isOpen={!!selectedUser}
-          onClose={() => setSelectedUser(null)}
+          isOpen={!!state.selectedUser}
+          onClose={() => updateState({ selectedUser: null })}
         >
           <ModalOverlay />
           <ModalContent bg="gray.800">
             <ModalHeader>
-              {selectedUser?.displayName} ile Sohbet
+              {state.selectedUser?.displayName} ile Sohbet
             </ModalHeader>
             <ModalCloseButton />
             <ModalBody pb={6}>
@@ -715,14 +719,14 @@ function App() {
                   bg="gray.700"
                   borderRadius="md"
                 >
-                  {privateMessages[selectedUser?.id]?.map((msg, index) => (
+                  {state.privateMessages[state.selectedUser?.id]?.map((msg, index) => (
                     <Box
                       key={index}
                       p={2}
-                      bg={msg.from.id === user.id ? "blue.500" : "gray.600"}
+                      bg={msg.from.id === state.user.id ? "blue.500" : "gray.600"}
                       borderRadius="md"
                       alignSelf={
-                        msg.from.id === user.id ? "flex-end" : "flex-start"
+                        msg.from.id === state.user.id ? "flex-end" : "flex-start"
                       }
                       maxW="80%"
                       mb={2}
@@ -742,7 +746,7 @@ function App() {
                     onKeyPress={(e) => {
                       if (e.key === "Enter" && e.target.value.trim()) {
                         handleSendPrivateMessage(
-                          selectedUser.id,
+                          state.selectedUser.id,
                           e.target.value
                         );
                         e.target.value = "";

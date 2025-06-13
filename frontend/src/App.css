@@ -112,6 +112,23 @@ body {
   color: var(--tg-theme-text-color);
 }
 
+.login-message {
+  color: var(--tg-theme-hint-color);
+  text-align: center;
+  margin: 20px 0;
+  line-height: 1.5;
+  font-size: 0.95em;
+  padding: 0 20px;
+}
+
+.login-screen h1 {
+  color: var(--tg-theme-text-color);
+  text-align: center;
+  margin-bottom: 20px;
+  font-size: 2em;
+  font-weight: 600;
+}
+
 .telegram-button {
   display: inline-block;
   margin-top: 20px;

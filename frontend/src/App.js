@@ -410,7 +410,11 @@ function App() {
     return (
       <div className="login-screen">
         <div className="login-content">
-          <h1>Telegram Chat</h1>
+          <h1>Eğilmezler Forum</h1>
+          <p className="login-message">
+            Giriş yapabilmek için üye olmanız gerekmektedir. Üyelikler şu anda ücretsizdir.
+            Bot üzerinden kayıt olabilirsiniz.
+          </p>
           {state.verificationError ? (
             <div className="error-message">
               <p>{state.verificationError}</p>
@@ -455,130 +459,162 @@ function App() {
   }
 
   return (
-    <div className="chat-container">
-      <div className="chat-sidebar">
-        <div className="user-info">
-          <h3>{state.username}</h3>
-          <button className="logout-button" onClick={() => window.location.reload()}>
-            Çıkış Yap
-          </button>
-        </div>
-
-        <div className="rooms-section">
-          <h4>Sohbet Odaları</h4>
-          <button className="new-room-button" onClick={() => setState(prev => ({ ...prev, showNewRoomModal: true }))}>
-            Yeni Oda Oluştur
-          </button>
-          <ul className="room-list">
-            {state.rooms.map(room => (
-              <li key={room}>
-                <button
-                  className={state.currentRoom === room ? 'active-room' : ''}
-                  onClick={() => handleRoomChange(room)}
-                >
-                  {room}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="users-section">
-          <h4>Çevrimiçi Kullanıcılar</h4>
-          <ul className="user-list">
-            {state.users.map(user => (
-              <li key={user.username}>
-                <button onClick={() => handleStartPrivateChat(user.username)}>
-                  {user.username}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
-      <div className="chat-main">
-        {state.showPrivateChat ? (
-          <div className="private-chat">
-            <div className="private-chat-header">
-              <h3>{state.selectedPrivateUser}</h3>
-              <button className="close-button" onClick={handleClosePrivateChat}>×</button>
-            </div>
-            <div className="private-messages">
-              {state.privateMessages[state.selectedPrivateUser]?.map((message, index) => (
-                <div
-                  key={index}
-                  className={`message ${message.isOwn ? 'sent' : 'received'}`}
-                >
-                  <div className="message-header">
-                    <span className="message-user">{message.from}</span>
-                    <span className="message-time">{formatTime(message.timestamp)}</span>
-                  </div>
-                  <div className="message-content">{message.content}</div>
-                </div>
-              ))}
-              <div ref={privateMessagesEndRef} />
-            </div>
-            <form className="message-form" onSubmit={handleSendPrivateMessage}>
+    <div className="app">
+      {!state.isConnected ? (
+        <div className="login-screen">
+          <h1>Eğilmezler Forum</h1>
+          <p className="login-message">
+            Giriş yapabilmek için üye olmanız gerekmektedir. Üyelikler şu anda ücretsizdir.
+            Bot üzerinden kayıt olabilirsiniz.
+          </p>
+          {state.error && <div className="error-message">{state.error}</div>}
+          {state.isLoading ? (
+            <div className="loading">Giriş yapılıyor...</div>
+          ) : (
+            <div className="login-form">
               <input
                 type="text"
-                value={state.privateMessageInput}
-                onChange={(e) => setState(prev => ({ ...prev, privateMessageInput: e.target.value }))}
-                placeholder="Özel mesajınızı yazın..."
+                value={state.username}
+                onChange={(e) => setState(prev => ({ ...prev, username: e.target.value }))}
+                placeholder="Kullanıcı adınızı girin"
+                disabled={state.isVerified}
               />
-              <button type="submit">Gönder</button>
-            </form>
-          </div>
-        ) : (
-          <>
-            <div className="chat-header">
-              <h2>{state.currentRoom}</h2>
-            </div>
-            <div className="messages">
-              {state.messages.map((message, index) => (
-                <div
-                  key={index}
-                  className={`message ${message.isOwn ? 'sent' : 'received'}`}
-                >
-                  <div className="message-header">
-                    <span className="message-user">{message.username}</span>
-                    <span className="message-time">{formatTime(message.timestamp)}</span>
-                  </div>
-                  <div className="message-content">{message.content}</div>
-                </div>
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
-            <form className="message-form" onSubmit={handleSendMessage}>
-              <input
-                type="text"
-                value={state.messageInput}
-                onChange={(e) => setState(prev => ({ ...prev, messageInput: e.target.value }))}
-                placeholder="Mesajınızı yazın..."
-              />
-              <button type="submit">Gönder</button>
-            </form>
-          </>
-        )}
-      </div>
-
-      {state.showNewRoomModal && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <h3>Yeni Oda Oluştur</h3>
-            <input
-              type="text"
-              value={state.newRoomName}
-              onChange={(e) => setState(prev => ({ ...prev, newRoomName: e.target.value }))}
-              placeholder="Oda adı"
-            />
-            <div className="modal-buttons">
-              <button onClick={handleCreateRoom}>Oluştur</button>
-              <button onClick={() => setState(prev => ({ ...prev, showNewRoomModal: false }))}>
-                İptal
+              <button
+                onClick={() => verifyToken(new URLSearchParams(window.location.search).get('token'))}
+                disabled={!state.username || state.isVerified}
+              >
+                {state.isVerified ? "Doğrulanıyor..." : "Giriş Yap"}
               </button>
             </div>
+          )}
+        </div>
+      ) : (
+        <div className="chat-container">
+          <div className="chat-sidebar">
+            <div className="user-info">
+              <h3>{state.username}</h3>
+              <button className="logout-button" onClick={() => window.location.reload()}>
+                Çıkış Yap
+              </button>
+            </div>
+
+            <div className="rooms-section">
+              <h4>Sohbet Odaları</h4>
+              <button className="new-room-button" onClick={() => setState(prev => ({ ...prev, showNewRoomModal: true }))}>
+                Yeni Oda Oluştur
+              </button>
+              <ul className="room-list">
+                {state.rooms.map(room => (
+                  <li key={room}>
+                    <button
+                      className={state.currentRoom === room ? 'active-room' : ''}
+                      onClick={() => handleRoomChange(room)}
+                    >
+                      {room}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="users-section">
+              <h4>Çevrimiçi Kullanıcılar</h4>
+              <ul className="user-list">
+                {state.users.map(user => (
+                  <li key={user.username}>
+                    <button onClick={() => handleStartPrivateChat(user.username)}>
+                      {user.username}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
+
+          <div className="chat-main">
+            {state.showPrivateChat ? (
+              <div className="private-chat">
+                <div className="private-chat-header">
+                  <h3>{state.selectedPrivateUser}</h3>
+                  <button className="close-button" onClick={handleClosePrivateChat}>×</button>
+                </div>
+                <div className="private-messages">
+                  {state.privateMessages[state.selectedPrivateUser]?.map((message, index) => (
+                    <div
+                      key={index}
+                      className={`message ${message.isOwn ? 'sent' : 'received'}`}
+                    >
+                      <div className="message-header">
+                        <span className="message-user">{message.from}</span>
+                        <span className="message-time">{formatTime(message.timestamp)}</span>
+                      </div>
+                      <div className="message-content">{message.content}</div>
+                    </div>
+                  ))}
+                  <div ref={privateMessagesEndRef} />
+                </div>
+                <form className="message-form" onSubmit={handleSendPrivateMessage}>
+                  <input
+                    type="text"
+                    value={state.privateMessageInput}
+                    onChange={(e) => setState(prev => ({ ...prev, privateMessageInput: e.target.value }))}
+                    placeholder="Özel mesajınızı yazın..."
+                  />
+                  <button type="submit">Gönder</button>
+                </form>
+              </div>
+            ) : (
+              <>
+                <div className="chat-header">
+                  <h2>{state.currentRoom}</h2>
+                </div>
+                <div className="messages">
+                  {state.messages.map((message, index) => (
+                    <div
+                      key={index}
+                      className={`message ${message.isOwn ? 'sent' : 'received'}`}
+                    >
+                      <div className="message-header">
+                        <span className="message-user">{message.username}</span>
+                        <span className="message-time">{formatTime(message.timestamp)}</span>
+                      </div>
+                      <div className="message-content">{message.content}</div>
+                    </div>
+                  ))}
+                  <div ref={messagesEndRef} />
+                </div>
+                <form className="message-form" onSubmit={handleSendMessage}>
+                  <input
+                    type="text"
+                    value={state.messageInput}
+                    onChange={(e) => setState(prev => ({ ...prev, messageInput: e.target.value }))}
+                    placeholder="Mesajınızı yazın..."
+                  />
+                  <button type="submit">Gönder</button>
+                </form>
+              </>
+            )}
+          </div>
+
+          {state.showNewRoomModal && (
+            <div className="modal-overlay">
+              <div className="modal">
+                <h3>Yeni Oda Oluştur</h3>
+                <input
+                  type="text"
+                  value={state.newRoomName}
+                  onChange={(e) => setState(prev => ({ ...prev, newRoomName: e.target.value }))}
+                  placeholder="Oda adı"
+                />
+                <div className="modal-buttons">
+                  <button onClick={handleCreateRoom}>Oluştur</button>
+                  <button onClick={() => setState(prev => ({ ...prev, showNewRoomModal: false }))}>
+                    İptal
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

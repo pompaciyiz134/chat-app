@@ -6,6 +6,7 @@ import TelegramBot from "node-telegram-bot-api";
 import crypto from "crypto";
 import mongoose from "mongoose";
 import { v4 as uuidv4 } from "uuid";
+import axios from "axios";
 
 const PORT = process.env.PORT || 5000;
 const app = express();
@@ -421,58 +422,72 @@ app.post('/api/set-link-password', async (req, res) => {
   }
 });
 
-// Webhook endpoint'ini güncelle
-app.post('/api/telegram/webhook', async (req, res) => {
+// Rastgele 9 haneli şifre oluşturma fonksiyonu
+function generateRandomPassword() {
+  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  let password = '';
+  for (let i = 0; i < 9; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
+
+// Webhook endpoint'i
+app.post("/telegram/webhook", express.json(), async (req, res) => {
   try {
     const { message } = req.body;
-    console.log('Webhook mesajı alındı:', message);
-
-    if (message?.text === '/start') {
-      const chatId = message.chat.id;
-      const username = message.from.username || message.from.first_name;
-
-      // Kullanıcıyı bul veya oluştur
-      let user = await User.findOne({ telegramId: chatId });
-      
-      if (!user) {
-        user = new User({
-          telegramId: chatId,
-          username: username,
-          isVerified: true,
-          lastStartCommand: new Date()
-        });
-        await user.save();
-        console.log('Yeni kullanıcı oluşturuldu:', username);
-      } else {
-        user.lastStartCommand = new Date();
-        await user.save();
-        console.log('Mevcut kullanıcı güncellendi:', username);
-      }
-
-      // Token oluştur ve deep link URL'sini gönder
-      const token = generateToken();
-      const deepLinkUrl = `${FRONTEND_URL}?token=${token}`;
-      
-      // Token'ı veritabanına kaydet
-      await Token.create({
-        token,
-        userId: user._id,
-        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 1 yıl
-      });
-
-      await bot.sendMessage(chatId, 
-        `Merhaba ${username}! Sohbet uygulamasına hoş geldiniz.\n\n` +
-        `Giriş yapmak için aşağıdaki linke tıklayın:\n${deepLinkUrl}\n\n` +
-        `Bu link süresiz geçerlidir. İlk kullanımda kendinize özel bir şifre belirleyebilirsiniz.`
-      );
-
-      res.status(200).json({ success: true });
-    } else {
-      res.status(200).json({ success: true, message: 'Komut işlenmedi' });
+    if (!message || !message.text || message.text !== "/start") {
+      return res.status(200).send("OK");
     }
+
+    const chatId = message.chat.id;
+    const username = message.from.username || `user_${chatId}`;
+
+    // Kullanıcıyı bul veya oluştur
+    let user = await User.findOne({ telegramId: chatId });
+    if (!user) {
+      user = new User({
+        telegramId: chatId,
+        username: username,
+        isVerified: false,
+        isAdmin: false,
+        lastStartCommand: new Date()
+      });
+      await user.save();
+    }
+
+    // Yeni token oluştur
+    const token = uuidv4();
+    const randomPassword = generateRandomPassword();
+
+    // Link şifresini kaydet
+    const linkPassword = new LinkPassword({
+      token: token,
+      password: randomPassword,
+      attempts: 0,
+      isLocked: false
+    });
+    await linkPassword.save();
+
+    // Kullanıcıyı güncelle
+    user.lastStartCommand = new Date();
+    user.currentToken = token;
+    await user.save();
+
+    // Deep link URL'sini oluştur
+    const deepLinkUrl = `${FRONTEND_URL}?token=${token}`;
+
+    // Telegram mesajını gönder
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+      chat_id: chatId,
+      text: `Eğilmezler Forum'a hoş geldiniz!\n\nGiriş yapabilmek için üye olmanız gerekmektedir. Üyelikler şu anda ücretsizdir.\n\nGiriş linkiniz: ${deepLinkUrl}\n\nGiriş şifreniz: ${randomPassword}\n\nBu şifreyi güvenli bir yerde saklayın. Şifrenizi kaybederseniz yeni bir link almak için tekrar /start komutunu kullanabilirsiniz.`,
+      parse_mode: "HTML"
+    });
+
+    res.status(200).send("OK");
   } catch (error) {
-    console.error('Webhook hatası:', error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error("Webhook error:", error);
+    res.status(500).send("Internal Server Error");
   }
 });
 

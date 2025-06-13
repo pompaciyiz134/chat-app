@@ -10,11 +10,10 @@ import { v4 as uuidv4 } from "uuid";
 const PORT = process.env.PORT || 5000;
 const app = express();
 
-// MongoDB bağlantısı
-mongoose.connect(process.env.MONGODB_URI || "mongodb+srv://your-mongodb-uri", {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-});
+// MongoDB bağlantısı - deprecated seçenekleri kaldırdık
+mongoose.connect(process.env.MONGODB_URI || "mongodb+srv://your-mongodb-uri")
+  .then(() => console.log("MongoDB bağlantısı başarılı"))
+  .catch(err => console.error("MongoDB bağlantı hatası:", err));
 
 // Kullanıcı şeması
 const userSchema = new mongoose.Schema({
@@ -71,10 +70,7 @@ const io = new Server(server, {
 const TELEGRAM_TOKEN = "8070821143:AAG20-yS1J4hxoNB50e5eH2A3GYME3p7CXM";
 const WEBHOOK_URL = "https://chat-app-bb7l.onrender.com/telegram/webhook";
 const bot = new TelegramBot(TELEGRAM_TOKEN, { 
-  polling: false,
-  webHook: {
-    port: PORT
-  }
+  polling: false
 });
 
 // Doğrulama kodları için geçici depo
@@ -131,7 +127,10 @@ const setupWebhook = async () => {
 // Sunucuyu başlat
 const startServer = async () => {
   try {
+    // Önce webhook'u ayarla
     await setupWebhook();
+    
+    // Sonra Express sunucusunu başlat
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       console.log("Telegram bot webhook modunda başlatıldı");

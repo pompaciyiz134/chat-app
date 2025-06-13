@@ -19,11 +19,7 @@ const io = new Server(server, {
 
 // Telegram Bot setup
 const TELEGRAM_TOKEN = "8070821143:AAG20-yS1J4hxoNB50e5eH2A3GYME3p7CXM";
-// Render.com otomatik olarak bir URL sağlayacak
-const WEBHOOK_URL = process.env.RENDER_EXTERNAL_URL 
-  ? `${process.env.RENDER_EXTERNAL_URL}/telegram/webhook`
-  : "https://your-app-name.onrender.com/telegram/webhook"; // Render.com'da oluşturduğunuz uygulamanın adını buraya yazın
-
+const WEBHOOK_URL = "https://chat-app-bb7l.onrender.com/telegram/webhook";
 const bot = new TelegramBot(TELEGRAM_TOKEN);
 
 // Webhook güvenliği için secret token

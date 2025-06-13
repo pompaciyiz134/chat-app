@@ -22,7 +22,7 @@ import {
 import { ArrowForwardIcon, AddIcon, ChatIcon } from "@chakra-ui/icons";
 import { io } from "socket.io-client";
 
-const SERVER_URL = "http://localhost:5000";
+const SERVER_URL = "https://chat-app-bb7l.onrender.com";
 
 function App() {
   const [username, setUsername] = useState("");

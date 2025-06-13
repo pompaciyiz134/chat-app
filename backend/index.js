@@ -7,6 +7,7 @@ import crypto from "crypto";
 import mongoose from "mongoose";
 import { v4 as uuidv4 } from "uuid";
 
+const PORT = process.env.PORT || 5000;
 const app = express();
 
 // MongoDB bağlantısı
@@ -72,7 +73,7 @@ const WEBHOOK_URL = "https://chat-app-bb7l.onrender.com/telegram/webhook";
 const bot = new TelegramBot(TELEGRAM_TOKEN, { 
   polling: false,
   webHook: {
-    port: process.env.PORT || 5000
+    port: PORT
   }
 });
 
@@ -127,12 +128,21 @@ const setupWebhook = async () => {
   }
 };
 
-// Sunucu başladığında webhook'u ayarla
-server.listen(PORT, async () => {
-  console.log(`Server running on port ${PORT}`);
-  await setupWebhook();
-  console.log("Telegram bot webhook modunda başlatıldı");
-});
+// Sunucuyu başlat
+const startServer = async () => {
+  try {
+    await setupWebhook();
+    server.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log("Telegram bot webhook modunda başlatıldı");
+    });
+  } catch (error) {
+    console.error("Server başlatma hatası:", error);
+    process.exit(1);
+  }
+};
+
+startServer();
 
 // Health check endpoint
 app.get("/", (req, res) => {
@@ -389,10 +399,4 @@ io.on("connection", async (socket) => {
       });
     }
   });
-});
-
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log("Telegram bot webhook modunda başlatıldı");
 }); 

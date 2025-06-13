@@ -69,7 +69,7 @@ const io = new Server(server, {
 // Telegram Bot setup
 const TELEGRAM_TOKEN = "8070821143:AAG20-yS1J4hxoNB50e5eH2A3GYME3p7CXM";
 const WEBHOOK_URL = "https://chat-app-bb7l.onrender.com/telegram/webhook";
-const bot = new TelegramBot(TELEGRAM_TOKEN);
+const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
 
 // Doğrulama kodları için geçici depo
 const verificationCodes = new Map();
@@ -79,14 +79,43 @@ const generateVerificationCode = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
+// Test endpoint'i
+app.get("/api/telegram/test", async (req, res) => {
+  try {
+    const botInfo = await bot.getMe();
+    console.log("Bot bilgileri:", botInfo);
+    
+    const webhookInfo = await bot.getWebHookInfo();
+    console.log("Webhook bilgileri:", webhookInfo);
+    
+    res.json({
+      botInfo,
+      webhookInfo,
+      webhookUrl: WEBHOOK_URL
+    });
+  } catch (error) {
+    console.error("Bot test hatası:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Webhook'u ayarla
 const setupWebhook = async () => {
   try {
+    // Önce mevcut webhook'u kaldır
+    await bot.deleteWebHook();
+    console.log("Mevcut webhook kaldırıldı");
+
+    // Yeni webhook'u ayarla
     await bot.setWebHook(WEBHOOK_URL, {
       max_connections: 40,
       allowed_updates: ["message"]
     });
     console.log("Telegram webhook başarıyla ayarlandı:", WEBHOOK_URL);
+
+    // Webhook bilgilerini kontrol et
+    const webhookInfo = await bot.getWebHookInfo();
+    console.log("Webhook durumu:", webhookInfo);
   } catch (error) {
     console.error("Webhook ayarlanırken hata:", error);
   }

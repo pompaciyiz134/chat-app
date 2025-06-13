@@ -318,7 +318,7 @@ function App() {
               <ModalBody pb={6}>
                 <VStack spacing={4}>
                   <Text>
-                    1. Telegram botunu başlatın: @your_bot_username
+                    1. Telegram botunu başlatın: @klfh_bot
                   </Text>
                   <Text>
                     2. Bot size bir doğrulama kodu gönderecek

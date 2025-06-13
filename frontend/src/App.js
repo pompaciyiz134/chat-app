@@ -25,7 +25,9 @@ function App() {
     rooms: ["genel"],
     selectedUser: null,
     privateMessages: {},
-    replyTo: null
+    replyTo: null,
+    showNewRoomModal: false,
+    newRoomName: ""
   });
 
   // State güncelleme fonksiyonu
@@ -150,9 +152,23 @@ function App() {
     }
   };
 
-  // Input değişikliklerini yönet
-  const handleInputChange = (e) => {
-    updateState({ message: e.target.value });
+  // Yeni oda oluşturma
+  const createNewRoom = () => {
+    if (!state.newRoomName.trim()) return;
+    
+    const newRoom = state.newRoomName.trim();
+    if (!state.rooms.includes(newRoom)) {
+      updateState(prev => ({
+        rooms: [...prev.rooms, newRoom],
+        room: newRoom,
+        showNewRoomModal: false,
+        newRoomName: ""
+      }));
+      
+      if (socketRef.current) {
+        socketRef.current.emit("join", { room: newRoom });
+      }
+    }
   };
 
   // Çıkış yapma
@@ -173,6 +189,11 @@ function App() {
       privateMessages: {},
       replyTo: null
     });
+  };
+
+  // Modal kapatma
+  const closeModal = () => {
+    updateState({ showNewRoomModal: false, newRoomName: "" });
   };
 
   return (
@@ -216,10 +237,19 @@ function App() {
                 {room}
               </div>
             ))}
+            {state.user?.isAdmin && (
+              <button 
+                className="new-room-button"
+                onClick={() => updateState({ showNewRoomModal: true })}
+              >
+                Yeni Oda Oluştur
+              </button>
+            )}
             <button className="logout-button" onClick={handleLogout}>
               Çıkış Yap
             </button>
           </div>
+
           <div className="messages-container">
             <div className="messages-header">
               <h3>{state.room} Odası</h3>
@@ -243,7 +273,7 @@ function App() {
                 type="text"
                 className="message-input"
                 value={state.message}
-                onChange={handleInputChange}
+                onChange={(e) => updateState({ message: e.target.value })}
                 placeholder="Mesajınızı yazın..."
               />
               <button type="submit" className="send-button">
@@ -251,16 +281,42 @@ function App() {
               </button>
             </form>
           </div>
+
           <div className="users-container">
             <h3>Çevrimiçi Kullanıcılar</h3>
             {state.users.map((user) => (
               <div key={user.id} className="user-item">
                 {user.username}
+                {user.isAdmin && <span className="admin-badge">Admin</span>}
               </div>
             ))}
           </div>
         </div>
       ) : null}
+
+      {/* Yeni Oda Modalı */}
+      {state.showNewRoomModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>Yeni Oda Oluştur</h3>
+            <input
+              type="text"
+              value={state.newRoomName}
+              onChange={(e) => updateState({ newRoomName: e.target.value })}
+              placeholder="Oda adı"
+              className="modal-input"
+            />
+            <div className="modal-buttons">
+              <button onClick={createNewRoom} className="modal-button confirm">
+                Oluştur
+              </button>
+              <button onClick={closeModal} className="modal-button cancel">
+                İptal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

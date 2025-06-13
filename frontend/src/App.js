@@ -156,7 +156,7 @@ function App() {
         ...prev,
         users: users.filter(user => user.username !== prev.username)
       }));
-    }));
+    });
 
     socket.on('error', (error) => {
       setState(prev => ({

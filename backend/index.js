@@ -60,10 +60,13 @@ const LinkPassword = mongoose.model('LinkPassword', new mongoose.Schema({
   lockExpires: { type: Date }
 }));
 
-// CORS ayarları
+// CORS ayarlarını güncelle
 app.use(cors({
-  origin: ["https://chat-app-frontend-stnq.onrender.com", "http://localhost:3000"],
-  methods: ["GET", "POST"],
+  origin: [
+    'http://localhost:3000',
+    'https://chat-app-frontend-stnq.onrender.com',
+    'https://*.onrender.com'
+  ],
   credentials: true
 }));
 

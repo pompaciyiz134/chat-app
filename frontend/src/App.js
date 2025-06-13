@@ -2,7 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import './App.css';
 
-const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'https://chat-app-b.onrender.com';
+const API_URL = window.location.hostname === 'localhost' 
+  ? 'http://localhost:3001'
+  : 'https://chat-app-b.onrender.com';
+
+const SOCKET_URL = window.location.hostname === 'localhost'
+  ? 'http://localhost:3001'
+  : 'https://chat-app-b.onrender.com';
 
 function App() {
   const [state, setState] = useState({

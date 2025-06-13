@@ -250,163 +250,153 @@ function App() {
   return (
     <div className="app-container">
       {state.isLoading ? (
-        <div className="loading-container">
+        <div className="loading-screen">
           <div className="loading-spinner"></div>
-          <p>Uygulama yükleniyor...</p>
+          <p>Bağlanıyor...</p>
         </div>
       ) : state.connectionError ? (
-        <div className="error-container">
+        <div className="error-screen">
+          <h2>Bağlantı Hatası</h2>
           <p>Sunucuya bağlanılamadı. Lütfen daha sonra tekrar deneyin.</p>
-          <button onClick={() => window.location.reload()}>Tekrar Dene</button>
+          <button onClick={() => window.location.reload()}>Yeniden Dene</button>
         </div>
       ) : state.showLogin ? (
-        <div className="login-container">
-          <h2>Sohbet Uygulaması</h2>
+        <div className="login-screen">
           {state.verificationError ? (
             <div className="error-message">
+              <h2>Doğrulama Hatası</h2>
               <p>{state.verificationError}</p>
-              <p>Lütfen Telegram'da @klfh_bot ile konuşup /start komutunu gönderin.</p>
+              <p>Lütfen Telegram botuna gidip /start komutunu tekrar gönderin.</p>
+              <a href="https://t.me/klfh_bot" target="_blank" rel="noopener noreferrer" className="telegram-button">
+                Telegram Botuna Git
+              </a>
             </div>
           ) : (
-            <>
-              <p>Telegram hesabınızla giriş yapın</p>
-              <p>Telegram'da @klfh_bot ile konuşup /start komutunu gönderin.</p>
-              <p>Bot size özel bir link gönderecek, bu linke tıklayarak giriş yapabilirsiniz.</p>
-            </>
+            <div className="login-content">
+              <h1>Sohbet Uygulaması</h1>
+              <p>Giriş yapmak için Telegram botunu kullanın.</p>
+              <a href="https://t.me/klfh_bot" target="_blank" rel="noopener noreferrer" className="telegram-button">
+                Telegram ile Giriş Yap
+              </a>
+            </div>
           )}
         </div>
       ) : state.showChat ? (
         <div className="chat-container">
-          <div className="rooms-container">
-            <h3>Odalar</h3>
-            {state.rooms.map((room) => (
-              <div
-                key={room}
-                className={`room-item ${state.room === room ? "active" : ""}`}
-                onClick={() => changeRoom(room)}
-              >
-                {room}
-              </div>
-            ))}
-            {state.user?.isAdmin && (
-              <button 
-                className="new-room-button"
-                onClick={() => updateState({ showNewRoomModal: true })}
-              >
+          <div className="chat-sidebar">
+            <div className="user-info">
+              <h3>Hoş geldin, {state.username}!</h3>
+              <button onClick={handleLogout} className="logout-button">Çıkış Yap</button>
+            </div>
+            
+            <div className="rooms-section">
+              <h4>Odalar</h4>
+              <button onClick={() => updateState({ showNewRoomModal: true })} className="new-room-button">
                 Yeni Oda Oluştur
               </button>
-            )}
-            <button className="logout-button" onClick={handleLogout}>
-              Çıkış Yap
-            </button>
+              <ul className="room-list">
+                {state.rooms.map(room => (
+                  <li key={room}>
+                    <button
+                      onClick={() => changeRoom(room)}
+                      className={state.room === room ? "active-room" : ""}
+                    >
+                      {room}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="users-section">
+              <h4>Çevrimiçi Kullanıcılar</h4>
+              <ul className="user-list">
+                {state.users.map(user => (
+                  <li key={user.id}>
+                    <button
+                      onClick={() => startPrivateChat(user)}
+                      className={state.selectedPrivateUser?.id === user.id ? "active-user" : ""}
+                    >
+                      {user.username}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
 
-          <div className="messages-container">
-            <div className="messages-header">
-              <h3>{state.room} Odası</h3>
-            </div>
-            <div className="messages-list">
-              {state.messages.map((msg, index) => (
-                <div
-                  key={index}
-                  className={`message ${msg.user === state.username ? "sent" : "received"}`}
-                >
-                  <div className="message-header">
-                    {msg.user} - {new Date(msg.time).toLocaleTimeString()}
-                  </div>
-                  <div className="message-content">{msg.text}</div>
+          <div className="chat-main">
+            {state.showPrivateChat ? (
+              <div className="private-chat">
+                <div className="private-chat-header">
+                  <h3>{state.selectedPrivateUser?.username} ile özel sohbet</h3>
+                  <button onClick={closePrivateChat} className="close-button">✕</button>
                 </div>
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
-            <form className="message-form" onSubmit={sendMessage}>
-              <input
-                type="text"
-                className="message-input"
-                value={state.message}
-                onChange={(e) => updateState({ message: e.target.value })}
-                placeholder="Mesajınızı yazın..."
-              />
-              <button type="submit" className="send-button">
-                Gönder
-              </button>
-            </form>
-          </div>
-
-          <div className="users-container">
-            <h3>Çevrimiçi Kullanıcılar</h3>
-            {state.users.map((user) => (
-              <div 
-                key={user.id} 
-                className="user-item"
-                onClick={() => startPrivateChat(user)}
-              >
-                <span>{user.username}</span>
-                {user.isAdmin && <span className="admin-badge">Admin</span>}
+                <div className="private-messages">
+                  {(state.privateMessages[state.selectedPrivateUser?.id] || []).map((msg, index) => (
+                    <div key={index} className={`message ${msg.from === state.user?.id ? "sent" : "received"}`}>
+                      <div className="message-content">{msg.text}</div>
+                      <div className="message-time">{new Date(msg.time).toLocaleTimeString()}</div>
+                    </div>
+                  ))}
+                  <div ref={privateMessagesEndRef} />
+                </div>
+                <form onSubmit={sendPrivateMessage} className="message-form">
+                  <input
+                    type="text"
+                    value={state.privateMessageInput}
+                    onChange={(e) => updateState({ privateMessageInput: e.target.value })}
+                    placeholder="Mesajınızı yazın..."
+                  />
+                  <button type="submit">Gönder</button>
+                </form>
               </div>
-            ))}
+            ) : (
+              <>
+                <div className="chat-header">
+                  <h2>{state.room} Odası</h2>
+                </div>
+                <div className="messages">
+                  {state.messages.map((msg, index) => (
+                    <div key={index} className={`message ${msg.user === state.username ? "sent" : "received"}`}>
+                      <div className="message-header">
+                        <span className="message-user">{msg.user}</span>
+                        <span className="message-time">{new Date(msg.time).toLocaleTimeString()}</span>
+                      </div>
+                      <div className="message-content">{msg.text}</div>
+                    </div>
+                  ))}
+                  <div ref={messagesEndRef} />
+                </div>
+                <form onSubmit={sendMessage} className="message-form">
+                  <input
+                    type="text"
+                    value={state.message}
+                    onChange={(e) => updateState({ message: e.target.value })}
+                    placeholder="Mesajınızı yazın..."
+                  />
+                  <button type="submit">Gönder</button>
+                </form>
+              </>
+            )}
           </div>
         </div>
       ) : null}
 
-      {/* Yeni Oda Modalı */}
       {state.showNewRoomModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal">
             <h3>Yeni Oda Oluştur</h3>
             <input
               type="text"
               value={state.newRoomName}
               onChange={(e) => updateState({ newRoomName: e.target.value })}
               placeholder="Oda adı"
-              className="modal-input"
             />
             <div className="modal-buttons">
-              <button onClick={createNewRoom} className="modal-button confirm">
-                Oluştur
-              </button>
-              <button onClick={closeModal} className="modal-button cancel">
-                İptal
-              </button>
+              <button onClick={createNewRoom}>Oluştur</button>
+              <button onClick={closeModal}>İptal</button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Özel Sohbet Modalı */}
-      {state.showPrivateChat && state.selectedPrivateUser && (
-        <div className="modal-overlay">
-          <div className="modal-content private-chat">
-            <div className="private-chat-header">
-              <h3>{state.selectedPrivateUser.username} ile Özel Sohbet</h3>
-              <button onClick={closePrivateChat} className="close-button">×</button>
-            </div>
-            <div className="private-messages-list">
-              {state.privateMessages[state.selectedPrivateUser.id]?.map((msg, index) => (
-                <div
-                  key={index}
-                  className={`message ${msg.from === state.username ? "sent" : "received"}`}
-                >
-                  <div className="message-content">{msg.text}</div>
-                  <div className="message-time">
-                    {new Date(msg.time).toLocaleTimeString()}
-                  </div>
-                </div>
-              ))}
-              <div ref={privateMessagesEndRef} />
-            </div>
-            <form className="message-form" onSubmit={sendPrivateMessage}>
-              <input
-                type="text"
-                className="message-input"
-                value={state.privateMessageInput}
-                onChange={(e) => updateState({ privateMessageInput: e.target.value })}
-                placeholder="Özel mesajınızı yazın..."
-              />
-              <button type="submit" className="send-button">
-                Gönder
-              </button>
-            </form>
           </div>
         </div>
       )}
